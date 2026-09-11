@@ -31,7 +31,9 @@ namespace Kumo.H.NotifyIcon.Reactor;
 /// this is the escape hatch for icons that live in memory, e.g. one extracted
 /// from an embedded resource. Reactor preview15 covers the same scenario with
 /// <c>WindowIcon.FromBytes</c> / <c>FromRgba</c>, which do not exist in
-/// preview14 — and this library is compiled against preview14.
+/// preview14 — use <see cref="HNotifyWindowIcon.FromBytes(byte[])"/> as the
+/// temporary stand-in (or <see cref="FromDrawingIcon"/> when the icon already
+/// is a <see cref="System.Drawing.Icon"/>).
 /// </item>
 /// </list>
 /// <para>

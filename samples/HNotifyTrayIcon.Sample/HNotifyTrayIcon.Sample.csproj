@@ -21,7 +21,9 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <Content Include="app.ico" CopyToOutputDirectory="PreserveNewest" />
+    <!-- Embedded (not a sidecar file): the tray icon is built from raw bytes via
+         HNotifyWindowIcon.FromBytes — the preview15 WindowIcon.FromBytes stand-in. -->
+    <EmbeddedResource Include="app.ico" LogicalName="HNotifyTrayIcon.Sample.app.ico" />
     <ProjectReference Include="..\..\src\Kumo.H.NotifyIcon.Reactor\Kumo.H.NotifyIcon.Reactor.csproj" />
     <PackageReference Include="Microsoft.UI.Reactor" Version="0.1.0-preview.14" />
   </ItemGroup>

@@ -32,6 +32,9 @@ ReactorApp.ShutdownPolicy = ShutdownPolicy.Explicit; // 纯托盘/托盘常驻�
 
 ReactorApp.Run(_ =>
 {
+    // 让 Explicit 真正生效：关掉 WinUI 默认的“最后一个窗口关闭即退出”
+    Application.Current.DispatcherShutdownMode = DispatcherShutdownMode.OnExplicitShutdown;
+
     var tray = HNotifyApp.OpenTrayIcon(new HNotifyTrayIconSpec(
         WindowIcon.FromPath(Path.Combine(AppContext.BaseDirectory, "app.ico")),
         "My App",
@@ -96,6 +99,7 @@ Element View(RenderContext context)
 | Reactor preview15 | Kumo.H.NotifyIcon.Reactor | 备注 |
 | --- | --- | --- |
 | `TrayIconSpec(Icon, Tooltip, Key, IsVisible)` | `HNotifyTrayIconSpec(Icon, Tooltip, Key, IsVisible)` | 位置参数与默认值一致；额外提供 `System.Drawing.Icon` 构造与 `FromDrawingIcon` 工厂 |
+| `WindowIcon.FromBytes(bytes)`（preview15 新增） | `HNotifyWindowIcon.FromBytes(byte[] / Stream)` | 临时替身；返回 `System.Drawing.Icon`，可直接传给 spec；仅支持 `.ico` 字节 |
 | `ReactorApp.OpenTrayIcon(spec)` | `HNotifyApp.OpenTrayIcon(spec)` | 同样的 UI 线程校验、同样的失败回滚（注销 + dispose + 重抛） |
 | `ReactorApp.TrayIcons` | `HNotifyApp.TrayIcons` | copy-on-write 快照，任意线程可读 |
 | `ReactorApp.FindTrayIcon(key)` | `HNotifyApp.FindTrayIcon(key)` | |
@@ -110,14 +114,48 @@ Element View(RenderContext context)
 
 ## 与 preview15 原生托盘实现的差异（务必阅读）
 
-1. **内存图标**：preview15 新增 `WindowIcon.FromBytes` / `FromRgba`，preview14 没有这些 API。本库用
-   `HNotifyTrayIconSpec.FromDrawingIcon(icon, tooltip, key, isVisible)`（或 `System.Drawing.Icon` 构造）覆盖这个场景，
+1. **内存图标**：preview15 新增 `WindowIcon.FromBytes` / `FromRgba`，preview14 没有这些 API。本库提供同名形态的临时替身
+   `HNotifyWindowIcon.FromBytes(bytes | stream)`（返回可直接传入 spec 的 `System.Drawing.Icon`），迁移时只换类名：
+
+   ```csharp
+   // 现在（preview14 + 本库）
+   new HNotifyTrayIconSpec(HNotifyWindowIcon.FromBytes(iconBytes), "My App", key);
+
+   // 迁到 preview15 后
+   new TrayIconSpec(WindowIcon.FromBytes(iconBytes), "My App", key);
+   ```
+
+   该替身仅支持 `.ico` 字节（后端是 `System.Drawing.Icon`）；其它内存来源仍可用
+   `HNotifyTrayIconSpec.FromDrawingIcon(icon, tooltip, key, isVisible)`（或 `System.Drawing.Icon` 构造），
    icon 由调用方持有、库内部克隆后交给 H.NotifyIcon 管理。
 2. **资源图标**：`WindowIcon.FromResource("ms-appx:///...")` 会尽力解析为磁盘文件（未打包应用查
    `AppContext.BaseDirectory`，打包应用查 `Package.Current.InstalledLocation`），解析失败则跳过图标加载并写
    `Debug` 诊断——与原生行为一致（通知区域需要真实 HICON）。
-3. **关闭策略**：Reactor preview14 的 `ShutdownPolicy` 只统计 Reactor 自己的窗口/托盘；本库的图标不在它的统计里。
-   托盘常驻应用请使用 `ShutdownPolicy.Explicit` 并在菜单里调用 `ReactorApp.Exit()`。
+3. **关闭策略**：Reactor preview14/15 的 `ShutdownPolicy` 只统计 Reactor 自己的窗口/托盘；本库的图标不在它的统计里，
+   托盘常驻请用 `ShutdownPolicy.Explicit` + 托盘菜单调用 `ReactorApp.Exit()`。
+   **但 `Explicit` 必须配合 WinUI 的平台开关才真正生效**：WinUI 默认
+   `Application.DispatcherShutdownMode = OnLastWindowClose`——最后一个 XAML 窗口关闭时 XAML runtime 会
+   `PostQuitMessage` 结束消息循环（与 Reactor 策略无关，`Explicit` 也拦不住）。应用启动时补一行即可
+   （Windows App SDK 1.8+；示例中已演示）：
+
+   ```csharp
+   Application.Current.DispatcherShutdownMode = DispatcherShutdownMode.OnExplicitShutdown;
+   ```
+
+   之后关掉最后一个窗口进程仍会驻留，只有 `ReactorApp.Exit()` 结束进程；可选但推荐再叠加“关闭即隐藏”
+   （保留窗口实例、恢复更快）：
+
+   ```csharp
+   opened.Closing += (_, e) =>
+   {
+       if (e.Reason != WindowCloseReason.UserClosed) return; // 让退出/级联关闭正常走
+       e.Cancel = true;
+       opened.Hide();                                        // 收进托盘
+   };
+   ```
+
+   另外：只要进程里还有**任何活着（哪怕隐藏）的应用窗口**，同样不会触发平台退出（例如弹过一次 flyout 留下的
+   宿主窗口，或像 `ReactorTrayIcon.Customize` 启动时持有的隐藏窗口）——这是副作用，不要依赖。
 4. **多图标**：H.NotifyIcon 用 Guid 区分同一进程内的多个图标。带有 `Key` 的 spec 会把 Key 映射为稳定的
    CustomName/Guid；**同一进程内开多个图标时请为每个图标提供不同的 `Key`**。
 5. **Flyout**：进程内单实例宿主窗口（与原生一致，任意时刻只能显示一个托盘 flyout）；位置跟随光标、尺寸按内容
@@ -153,6 +191,7 @@ Kumo.H.NotifyIcon.Reactor/
 ├─ src/Kumo.H.NotifyIcon.Reactor/
 │  ├─ HNotifyTrayIconSpec.cs          # 对齐 preview15 TrayIconSpec
 │  ├─ HNotifyTrayIcon.cs              # 对齐 preview15 ReactorTrayIcon（H.NotifyIcon 后端）
+│  ├─ HNotifyWindowIcon.cs            # 对齐 preview15 WindowIcon.FromBytes（临时替身）
 │  ├─ HNotifyApp.cs                   # 对齐 ReactorApp 的托盘注册表
 │  ├─ HNotifyComponent.cs             # 对齐 Component.UseTrayIcon
 │  ├─ HNotifyRenderContextExtensions.cs
