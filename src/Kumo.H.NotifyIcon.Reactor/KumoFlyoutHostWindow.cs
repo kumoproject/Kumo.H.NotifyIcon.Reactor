@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
 using System.Runtime.InteropServices;
 using Microsoft.UI.Reactor.Core;
 using Microsoft.UI.Reactor.Hosting;
@@ -47,6 +48,7 @@ internal sealed class KumoFlyoutHostWindow : IDisposable
     private KeyboardAccelerator? _escapeAccelerator;
     private bool _disposed;
     private bool _isShowing;
+    private bool _windowClosed;
 
     /// <summary>Acquire the per-process host, creating it on first call. UI-thread only.</summary>
     public static KumoFlyoutHostWindow GetOrCreate()
@@ -90,15 +92,37 @@ internal sealed class KumoFlyoutHostWindow : IDisposable
         catch (Exception ex) { Debug.WriteLine($"[Kumo] Tray flyout presenter setup failed: {ex.Message}"); }
 
         _window.Activated += OnActivated;
+
+        // WinUI closes every window on Application.Exit. From that point on any
+        // Window member access throws COMException ("The WinUI Desktop Window
+        // object has already been closed"), so latch the state and never touch
+        // the window again once this fires.
+        _window.Closed += OnWindowClosed;
+    }
+
+    private void OnWindowClosed(object sender, WindowEventArgs args)
+    {
+        _windowClosed = true;
+        _isShowing = false;
+
+        // Window is gone — only the managed Reactor host needs tearing down, and
+        // even that may throw from inside the window's teardown; DetachHost
+        // swallows it.
+        DetachHost();
     }
 
     private void OnActivated(object sender, WindowActivatedEventArgs args)
     {
+        if (_disposed || _windowClosed) return;
+
         // Light dismiss: clicking outside the flyout, pressing Escape (when it
-        // deactivates the window), or invoking another window lands here.
+        // deactivates the window), or invoking another window lands here. During
+        // shutdown the window can already be closed by the time WinUI raises
+        // this, so nothing may escape into the XAML event loop.
         if (args.WindowActivationState == WindowActivationState.Deactivated && _isShowing)
         {
-            Hide();
+            try { Hide(); }
+            catch (Exception ex) { Debug.WriteLine($"[Kumo] Tray flyout hide failed: {ex.GetType().Name}: {ex.Message}"); }
         }
     }
 
@@ -108,7 +132,7 @@ internal sealed class KumoFlyoutHostWindow : IDisposable
     /// </summary>
     public void Show(Element flyoutContent)
     {
-        if (_disposed) return;
+        if (_disposed || _windowClosed) return;
         ArgumentNullException.ThrowIfNull(flyoutContent);
 
         // Tear down the previous mount first so the flyout gets a fresh hook
@@ -132,8 +156,11 @@ internal sealed class KumoFlyoutHostWindow : IDisposable
         if (!_isShowing) return;
         _isShowing = false;
 
-        try { _appWindow.Hide(); }
-        catch (Exception ex) { Debug.WriteLine($"[Kumo] Tray flyout Hide failed: {ex.Message}"); }
+        if (!_windowClosed)
+        {
+            try { _appWindow.Hide(); }
+            catch (Exception ex) { Debug.WriteLine($"[Kumo] Tray flyout Hide failed: {ex.GetType().Name}: {ex.Message}"); }
+        }
 
         // Dispose the per-show host so its hook-state cleanups run promptly; the
         // next Show creates a new host on the same window.
@@ -147,7 +174,7 @@ internal sealed class KumoFlyoutHostWindow : IDisposable
 
         queue.TryEnqueue(global::Microsoft.UI.Dispatching.DispatcherQueuePriority.Low, () =>
         {
-            if (_disposed || !_isShowing) return;
+            if (_disposed || _windowClosed || !_isShowing) return;
 
             SizeToContent(activate);
             if (activate) EnqueueLayoutPass(activate: false);
@@ -156,6 +183,8 @@ internal sealed class KumoFlyoutHostWindow : IDisposable
 
     private void SizeToContent(bool activate)
     {
+        if (_windowClosed) return;
+
         try
         {
             if (activate) EnsureEscapeAccelerator();
@@ -174,8 +203,8 @@ internal sealed class KumoFlyoutHostWindow : IDisposable
 
     private (double Width, double Height) MeasureContent()
     {
-        var content = _window.Content as FrameworkElement;
-        if (content is null) return (FallbackWidthDip, FallbackHeightDip);
+        if (!TryGetWindowContent(out var content))
+            return (FallbackWidthDip, FallbackHeightDip);
 
         content.Measure(new global::Windows.Foundation.Size(
             double.PositiveInfinity, double.PositiveInfinity));
@@ -189,12 +218,13 @@ internal sealed class KumoFlyoutHostWindow : IDisposable
     private void EnsureEscapeAccelerator()
     {
         if (_escapeAccelerator is not null) return;
-        if (_window.Content is not UIElement root) return;
+        if (!TryGetWindowContent(out var root)) return;
 
         var accelerator = new KeyboardAccelerator { Key = VirtualKey.Escape };
         accelerator.Invoked += (_, args) =>
         {
-            Hide();
+            try { Hide(); }
+            catch (Exception ex) { Debug.WriteLine($"[Kumo] Tray flyout escape-hide failed: {ex.Message}"); }
             args.Handled = true;
         };
         root.KeyboardAccelerators.Add(accelerator);
@@ -205,15 +235,39 @@ internal sealed class KumoFlyoutHostWindow : IDisposable
     {
         if (_escapeAccelerator is not null)
         {
-            if (_window.Content is UIElement root)
+            if (TryGetWindowContent(out var root))
             {
                 try { root.KeyboardAccelerators.Remove(_escapeAccelerator); } catch { /* best effort */ }
             }
             _escapeAccelerator = null;
         }
 
-        try { _host?.Dispose(); } catch (Exception ex) { Debug.WriteLine($"[Kumo] Tray flyout host dispose failed: {ex.Message}"); }
+        try { _host?.Dispose(); } catch (Exception ex) { Debug.WriteLine($"[Kumo] Tray flyout host dispose failed: {ex.GetType().Name}: {ex.Message}"); }
         _host = null;
+    }
+
+    /// <summary>
+    /// Window.Content is only safe while the window is alive: after WinUI closes
+    /// the window (Application.Exit, explicit Close) the getter throws
+    /// <see cref="COMException"/> ("The WinUI Desktop Window object has already
+    /// been closed."). Latches <see cref="_windowClosed"/> so later calls skip
+    /// the window entirely.
+    /// </summary>
+    private bool TryGetWindowContent([NotNullWhen(true)] out FrameworkElement? content)
+    {
+        content = null;
+        if (_disposed || _windowClosed) return false;
+
+        try
+        {
+            content = _window.Content as FrameworkElement;
+            return content is not null;
+        }
+        catch (Exception ex) when (ex is COMException or InvalidOperationException or ObjectDisposedException)
+        {
+            _windowClosed = true;
+            return false;
+        }
     }
 
     /// <summary>
@@ -289,8 +343,14 @@ internal sealed class KumoFlyoutHostWindow : IDisposable
         _isShowing = false;
 
         try { _window.Activated -= OnActivated; } catch { /* best effort */ }
+        try { _window.Closed -= OnWindowClosed; } catch { /* best effort */ }
+
         DetachHost();
-        try { _window.Close(); } catch { /* best effort */ }
+
+        if (!_windowClosed)
+        {
+            try { _window.Close(); } catch { /* best effort */ }
+        }
     }
 
     [StructLayout(LayoutKind.Sequential)]
