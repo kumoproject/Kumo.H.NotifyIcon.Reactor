@@ -1,5 +1,9 @@
 using System.Windows.Input;
 using Microsoft.UI.Reactor.Core;
+using Microsoft.UI.Xaml;
+using Microsoft.UI.Xaml.Markup;
+using Microsoft.UI.Xaml.Media;
+using Microsoft.UI.Xaml.Media.Imaging;
 using WinUI = Microsoft.UI.Xaml.Controls;
 
 namespace Kumo.H.NotifyIcon.Reactor;
@@ -94,12 +98,15 @@ public enum HNotifyContextMenuTheme
 /// executes the command too, so one wiring works everywhere.
 /// </para>
 /// <para>
-/// <b>Translation limits</b> (imposed by H.NotifyIcon's menu rendering): item
-/// icons, keyboard accelerators, access keys and descriptions are not mapped;
+/// <b>Translation limits</b> (imposed by H.NotifyIcon's menu rendering): icons
+/// ARE converted — the <c>MenuItem(..., icon:)</c> string (a <c>Symbol</c> enum
+/// name or a Segoe Fluent glyph) and every public <c>IconData</c> shape — but
+/// only <see cref="HNotifyContextMenuMode.SecondWindow"/> mode renders them;
+/// the native popup carries text / enabled / checked only. Keyboard
+/// accelerators, access keys and descriptions are not mapped;
 /// <c>ToggleMenuItem</c> / <c>RadioMenuItem</c> keep their initial checked
-/// state, but their callbacks only fire in
-/// <see cref="HNotifyContextMenuMode.SecondWindow"/> mode, and the native popup
-/// never writes the checked state back.
+/// state, but their callbacks only fire in window-hosted mode, and the native
+/// popup never writes the checked state back.
 /// </para>
 /// </remarks>
 public static class HNotifyMenu
@@ -156,6 +163,9 @@ public static class HNotifyMenu
             IsEnabled = data.IsEnabled,
         };
 
+        if (ResolveIcon(data.IconElement, data.Icon) is { } icon)
+            item.Icon = icon;
+
         if (data.OnClick is not null)
         {
             // Command, not Click — see the remarks on this class.
@@ -167,6 +177,10 @@ public static class HNotifyMenu
     private static WinUI.MenuFlyoutSubItem CreateSubItem(MenuFlyoutSubItemData data)
     {
         var item = new WinUI.MenuFlyoutSubItem { Text = data.Text };
+
+        if (ResolveIcon(data.IconElement, data.Icon) is { } icon)
+            item.Icon = icon;
+
         foreach (var child in data.Items)
         {
             ArgumentNullException.ThrowIfNull(child);
@@ -182,6 +196,9 @@ public static class HNotifyMenu
             Text = data.Text,
             IsChecked = data.IsChecked,
         };
+
+        if (ResolveIcon(data.IconElement, data.Icon) is { } icon)
+            item.Icon = icon;
 
         if (data.OnIsCheckedChanged is not null)
         {
@@ -202,11 +219,80 @@ public static class HNotifyMenu
             IsChecked = data.IsChecked,
         };
 
+        if (ResolveIcon(data.IconElement, data.Icon) is { } icon)
+            item.Icon = icon;
+
         if (data.OnClick is not null)
         {
             item.Click += (_, _) => data.OnClick();
         }
         return item;
+    }
+
+    // Reactor's own IconResolver is internal, so its IconData → IconElement
+    // projection is mirrored here with the same semantics: IconData wins over
+    // the string; a string is either a Symbol enum name or a Segoe Fluent glyph.
+    private static WinUI.IconElement? ResolveIcon(IconData? iconData, string? icon)
+    {
+        if (iconData is not null)
+        {
+            return iconData switch
+            {
+                SymbolIconData data => ResolveIconString(data.Symbol) ?? new WinUI.SymbolIcon(WinUI.Symbol.Placeholder),
+                FontIconData data => CreateFontIcon(data),
+                BitmapIconData data => new WinUI.BitmapIcon { UriSource = data.Source, ShowAsMonochrome = data.ShowAsMonochrome },
+                PathIconData data => CreatePathIcon(data),
+                ImageIconData data => new WinUI.ImageIcon { Source = new BitmapImage(data.Source) },
+                _ => null,
+            };
+        }
+
+        return icon is null ? null : ResolveIconString(icon);
+    }
+
+    private static WinUI.IconElement? ResolveIconString(string symbol)
+    {
+        if (string.IsNullOrEmpty(symbol)) return null;
+
+        if (Enum.TryParse<WinUI.Symbol>(symbol, ignoreCase: true, out var parsed))
+            return new WinUI.SymbolIcon(parsed);
+
+        return new WinUI.FontIcon
+        {
+            Glyph = symbol,
+            FontFamily = ResolveSymbolFontFamily(),
+        };
+    }
+
+    private static FontFamily ResolveSymbolFontFamily()
+    {
+        if (Application.Current?.Resources is { } resources
+            && resources.TryGetValue("SymbolThemeFontFamily", out var value)
+            && value is FontFamily themeFont)
+        {
+            return themeFont;
+        }
+        return new FontFamily("Segoe Fluent Icons, Segoe MDL2 Assets");
+    }
+
+    private static WinUI.FontIcon CreateFontIcon(FontIconData data)
+    {
+        var icon = new WinUI.FontIcon { Glyph = data.Glyph };
+        if (data.FontFamily is not null) icon.FontFamily = new FontFamily(data.FontFamily);
+        if (data.FontSize.HasValue) icon.FontSize = data.FontSize.Value;
+        return icon;
+    }
+
+    private static WinUI.PathIcon CreatePathIcon(PathIconData data)
+    {
+        var icon = new WinUI.PathIcon();
+        if (XamlReader.Load(
+            $"<Geometry xmlns='http://schemas.microsoft.com/winfx/2006/xaml/presentation'>{data.Data}</Geometry>")
+            is Geometry geometry)
+        {
+            icon.Data = geometry;
+        }
+        return icon;
     }
 
     private sealed class DelegatingCommand : ICommand

@@ -185,7 +185,8 @@ Element View(RenderContext context)
    `CloseContextMenuOnItemClick`，以及 `HNotifyTrayIcon.ShowContextMenu(point)` / `CloseContextMenu()`。要点：
    - `HNotifyMenu.Create(...)` 接受 `MenuItem()` / `MenuSeparator()` / `MenuSubItem()` / `ToggleMenuItem()` / `RadioMenuItem()`，
      转换成 H.NotifyIcon 需要的 `MenuFlyout`；菜单项动作走 `ICommand`（`PopupMenu` 模式下 H.NotifyIcon 只执行 `Command`，不会触发 `Click`）；
-   - 图标 / 快捷键 / AccessKey / Description 不参与转换；`ToggleMenuItem` / `RadioMenuItem` 只映射初始勾选状态，回调仅在 `SecondWindow` 模式生效；
+   - 图标会转换（`MenuItem(..., icon: "Home")` 的 `Symbol` 名/字形，或 `IconData`），但只有 `SecondWindow` 模式会显示（原生弹出菜单不带图标）；快捷键 / AccessKey / Description 不参与转换；
+   - `ToggleMenuItem` / `RadioMenuItem` 只映射初始勾选状态，回调仅在 `SecondWindow` 模式生效；
    - `PopupMenu`（默认）= Win32 原生弹出菜单，`ShowContextMenu` 在菜单关闭前不返回（阻塞）；
    - `SecondWindow` = H.NotifyIcon 用独立窗口承载 `MenuFlyout`（进程会多一个窗口，退出判定要多留意）；
    - 原生菜单与 Reactor flyout 互不影响，但别把两者绑在同一个鼠标手势上（会叠两个菜单）。

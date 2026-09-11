@@ -74,10 +74,11 @@ ReactorApp.Run(_ =>
         WindowKey.Of("main-tray"))
     {
         // Reactor's own menu DSL (Factories.MenuItem / MenuSeparator), converted
-        // by the library into the MenuFlyout H.NotifyIcon needs.
+        // by the library into the MenuFlyout H.NotifyIcon needs. Icons render in
+        // the window-hosted mode; the native popup carries text only.
         ContextMenu = nativeMenu
             ? HNotifyMenu.Create(
-                MenuItem("重新打开主窗口", OpenMainWindow),
+                MenuItem("重新打开主窗口", OpenMainWindow, icon: "Home"),
                 MenuSeparator(),
                 MenuItem("退出", () => ReactorApp.Exit()))
             : null,
