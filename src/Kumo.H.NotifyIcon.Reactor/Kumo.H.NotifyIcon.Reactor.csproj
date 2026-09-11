@@ -10,8 +10,6 @@
     <AssemblyName>Kumo.H.NotifyIcon.Reactor</AssemblyName>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <NoWarn>$(NoWarn);CS1591</NoWarn>
-    <CsWin32RunAsBuildTask>true</CsWin32RunAsBuildTask>
-    <DisableRuntimeMarshalling>true</DisableRuntimeMarshalling>
     <IsAotCompatible>true</IsAotCompatible>
 	<WarningsAsErrors>$(WarningsAsErrors);CsWinRT1028;CsWinRT1030</WarningsAsErrors>
   </PropertyGroup>
@@ -32,9 +30,6 @@
   <ItemGroup>
     <PackageReference Include="Microsoft.UI.Reactor" Version="0.1.0-preview.14" />
     <PackageReference Include="H.NotifyIcon.WinUI" Version="2.5.0-dev.2" />
-    <PackageReference Include="Microsoft.Windows.CsWin32" Version="0.3.333">
-      <PrivateAssets>all</PrivateAssets>
-    </PackageReference>
   </ItemGroup>
 
 </Project>

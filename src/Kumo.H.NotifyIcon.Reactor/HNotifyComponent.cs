@@ -28,9 +28,9 @@ namespace Kumo.H.NotifyIcon.Reactor;
 ///         UseEffect(() =&gt;
 ///         {
 ///             if (tray is null) return () =&gt; { };
-///             EventHandler onRightClick = (_, _) =&gt; tray.ShowFlyout(menu);
-///             tray.RightClick += onRightClick;
-///             return () =&gt; tray.RightClick -= onRightClick;
+///             EventHandler onClick = (_, _) =&gt; OpenMainWindow();
+///             tray.Click += onClick;
+///             return () =&gt; tray.Click -= onClick;
 ///         }, tray ?? (object)"no-tray");
 ///
 ///         return TextBlock("Tray ready");

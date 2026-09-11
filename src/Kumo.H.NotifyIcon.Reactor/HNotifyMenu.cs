@@ -10,8 +10,8 @@ namespace Kumo.H.NotifyIcon.Reactor;
 
 /// <summary>
 /// When the H.NotifyIcon native context menu opens on its own, mirroring the
-/// backend's <c>MenuActivation</c> values. (HNotify extension — preview15's tray
-/// API has no native-menu concept; it uses <c>ShowFlyout</c>.)
+/// backend's <c>MenuActivation</c> values. (HNotify extension — preview15's
+/// tray API has no native-menu concept.)
 /// </summary>
 public enum HNotifyMenuActivation
 {

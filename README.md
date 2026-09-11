@@ -2,24 +2,24 @@
 
 用 [H.NotifyIcon](https://github.com/HavenDV/H.NotifyIcon) 实现的、独立于 Reactor 原生托盘实现的一组 tray icon 组件库。
 
-**一句话概括**：调用方式 1:1 对齐 [microsoft-ui-reactor](https://github.com/microsoft/microsoft-ui-reactor) **v0.1.0-preview.15** 的托盘 API（`TrayIconSpec` / `ReactorTrayIcon` / `ReactorApp.OpenTrayIcon` / `UseTrayIcon`），而实现完全托底在 H.NotifyIcon 上；本库自身的编译依赖是 NuGet 上的 **Microsoft.UI.Reactor 0.1.0-preview.14**。
+**一句话概括**：调用方式对齐 [microsoft-ui-reactor](https://github.com/microsoft/microsoft-ui-reactor) **v0.1.0-preview.15** 的托盘 API（`TrayIconSpec` / `ReactorTrayIcon` / `ReactorApp.OpenTrayIcon` / `UseTrayIcon`），而实现完全托底在 H.NotifyIcon 上；托盘菜单不再沿用 preview15 的自绘 flyout，改为直接用 H.NotifyIcon 的原生菜单系统。本库自身的编译依赖是 NuGet 上的 **Microsoft.UI.Reactor 0.1.0-preview.14**。
 
 ## 版本基线
 
 | 项目 | 值 |
 | --- | --- |
-| API 参照 | microsoft-ui-reactor `v0.1.0-preview.15`（commit `f17ce2dd`），`src/Reactor/Hosting/Shell/TrayIconSpec.cs`、`ReactorTrayIcon.cs`、`TrayFlyoutHostWindow.cs`，`src/Reactor/Core/RenderContext.cs#UseTrayIcon` |
+| API 参照 | microsoft-ui-reactor `v0.1.0-preview.15`（commit `f17ce2dd`），`src/Reactor/Hosting/Shell/TrayIconSpec.cs`、`ReactorTrayIcon.cs`，`src/Reactor/Core/RenderContext.cs#UseTrayIcon` |
 | NuGet 依赖 | `Microsoft.UI.Reactor` **0.1.0-preview.14** |
 | 托盘后端 | `H.NotifyIcon.WinUI` 2.5.0-dev.2 |
 | 目标框架 | `net10.0-windows10.0.26100.0` |
 
 ## 为什么会有这个库
 
-Reactor 的原生 tray 是自研的 Win32 `Shell_NotifyIcon` 实现（隐藏窗口、回调分发、flyout 宿主窗口都在框架内部）。本库保留完全相同的调用体验，但：
+Reactor 的原生 tray 是自研的 Win32 `Shell_NotifyIcon` 实现（隐藏窗口、回调分发、flyout 宿主窗口都在框架内部）。本库保留相同的调用体验，但：
 
 - 图标注册/隐藏/更新、Explorer 重启后的自动恢复、多图标 Id 管理交给 H.NotifyIcon；
-- flyout 内容仍由 Reactor 自己的 `ReactorHost` 渲染；
-- 调用方代码与 preview15 完全同形，将来要迁回原生 API（或反向迁移）只需要替换 `HNotifyApp` → `ReactorApp`、`HNotifyTrayIconSpec` → `TrayIconSpec`。
+- 菜单用 H.NotifyIcon 的原生菜单系统（`PopupMenu` / `SecondWindow`），菜单内容用 Reactor 的菜单 DSL（`MenuItem()` / `MenuSeparator()`）描述、由本库转换——不再实现 preview15 的自绘 flyout 宿主窗口；
+- 除菜单外调用方代码与 preview15 同形，将来要迁回原生 API（或反向迁移）只需要替换 `HNotifyApp` → `ReactorApp`、`HNotifyTrayIconSpec` → `TrayIconSpec`。
 
 ## 快速开始
 
@@ -38,15 +38,16 @@ ReactorApp.Run(_ =>
     var tray = HNotifyApp.OpenTrayIcon(new HNotifyTrayIconSpec(
         WindowIcon.FromPath(Path.Combine(AppContext.BaseDirectory, "app.ico")),
         "My App",
-        WindowKey.Of("main-tray")));
+        WindowKey.Of("main-tray"))
+    {
+        ContextMenu = HNotifyMenu.Create(          // Reactor 菜单 DSL → H.NotifyIcon 原生菜单
+            MenuItem("打开主窗口", OpenMainWindow),
+            MenuSeparator(),
+            MenuItem("退出", () => ReactorApp.Exit())),
+        MenuActivation = HNotifyMenuActivation.RightClick,
+    });
 
     tray.Click += (_, _) => OpenMainWindow();
-    tray.RightClick += (_, _) => tray.ShowFlyout(
-        VStack(4,
-            Button("打开主窗口", OpenMainWindow),
-            Button("退出", () => ReactorApp.Exit()))
-        .Width(240)
-        .Padding(8));
 });
 ```
 
@@ -64,9 +65,9 @@ sealed class TrayHost : HNotifyComponent
         UseEffect(() =>
         {
             if (tray is null) return () => { };
-            EventHandler onRightClick = (_, _) => tray.ShowFlyout(menu);
-            tray.RightClick += onRightClick;
-            return () => tray.RightClick -= onRightClick;
+            EventHandler onClick = (_, _) => OpenMainWindow();
+            tray.Click += onClick;
+            return () => tray.Click -= onClick;
         }, tray ?? (object)"no-tray");
 
         return TextBlock("Tray ready");
@@ -82,9 +83,9 @@ Element View(RenderContext context)
     context.UseEffect(() =>
     {
         if (tray is null) return () => { };
-        EventHandler onRightClick = (_, _) => tray.ShowFlyout(menu);
-        tray.RightClick += onRightClick;
-        return () => tray.RightClick -= onRightClick;
+        EventHandler onClick = (_, _) => OpenMainWindow();
+        tray.Click += onClick;
+        return () => tray.Click -= onClick;
     }, tray ?? (object)"no-tray");
 
     return TextBlock("Tray ready");
@@ -109,7 +110,7 @@ Element View(RenderContext context)
 | `ReactorTrayIcon.Id/Key/Spec/Icon/Tooltip/IsVisible` | `HNotifyTrayIcon` 同名成员 | `Icon` 为 `WindowIcon?`，另有 `DrawingIcon` |
 | `ReactorTrayIcon.Update(spec)` | `HNotifyTrayIcon.Update(spec)` | 只重放发生变化的字段；`Update` 在已释放时抛 `ObjectDisposedException` |
 | `Click / DoubleClick / RightClick` | 同名事件 | 见下方“点击语义” |
-| `ShowFlyout(Element) / HideFlyout()` | 同名方法 | 进程内单飞窗，内容尺寸自适应 |
+| `ShowFlyout(Element)` / `HideFlyout()` | **不提供**（该链路已移除） | 托盘弹出统一用 H.NotifyIcon 原生菜单，见差异第 5、9 条 |
 | `Close()` / `Dispose()` | 同名 | 幂等 |
 | `Component.UseTrayIcon(spec)` | `HNotifyComponent.UseTrayIcon(spec)`（protected） | 见“组件模式” |
 | `RenderContext.UseTrayIcon(spec)` | `HNotifyRenderContextExtensions.UseTrayIcon(context, spec)` | 扩展方法，调用写法一致 |
@@ -156,19 +157,16 @@ Element View(RenderContext context)
    };
    ```
 
-   另外：只要进程里还有**任何活着（哪怕隐藏）的应用窗口**，同样不会触发平台退出（例如弹过一次 flyout 留下的
-   宿主窗口，或像 `ReactorTrayIcon.Customize` 启动时持有的隐藏窗口）——这是副作用，不要依赖。
+   另外：只要进程里还有**任何活着（哪怕隐藏）的应用窗口**，同样不会触发平台退出（例如 ComponentSample 的隐藏托盘宿主窗口，或像 `ReactorTrayIcon.Customize` 启动时持有的隐藏窗口）——这是副作用，不要依赖。
 4. **多图标**：H.NotifyIcon 用 Guid 区分同一进程内的多个图标。带有 `Key` 的 spec 会把 Key 映射为稳定的
    CustomName/Guid；**同一进程内开多个图标时请为每个图标提供不同的 `Key`**。
-5. **Flyout**：进程内单实例宿主窗口（与原生一致，任意时刻只能显示一个托盘 flyout）；位置跟随光标、尺寸按内容
-   测量自适应（原生是固定 280×360）；点击外部或按 Esc 关闭。
+5. **无 Reactor flyout**：不再实现 preview15 的 `ShowFlyout(Element)` / `HideFlyout()`（自绘 flyout 宿主窗口）。托盘弹出统一用 H.NotifyIcon 的原生菜单（见第 9 条）；要在托盘旁弹任意 Reactor 内容面板，请自建窗口实现（本库不提供）。
 6. **点击语义**：单击 → `Click`；双击 → `Click`（一次）+ `DoubleClick`。H.NotifyIcon 会抑制双击尾随的抬起事件，
    而原生实现会触发两次 `Click` + 一次 `DoubleClick`。单击不会被“双击等待时间”延迟。
-7. **线程模型**：与 preview15 一致，所有 mutator（含 `ShowFlyout`）必须在 Reactor UI 线程调用，否则抛
-   `InvalidOperationException`。
+7. **线程模型**：所有 mutator（含菜单相关属性与 `ShowContextMenu` / `CloseContextMenu`）必须在 Reactor UI 线程调用，否则抛 `InvalidOperationException`。
 8. **图标更新**：`Update`/属性 setter 只在图标源引用变化时重新加载；`System.Drawing.Icon` 每次都会克隆，
    调用方保留所有权。
-9. **原生菜单（HNotify 扩展）**：默认关闭 H.NotifyIcon 自带菜单（保持 preview15 的 `ShowFlyout` 行为），需要时直接复用 **Reactor 自己的菜单 DSL**：
+9. **菜单（HNotify 扩展）**：preview15 的托盘 API 没有原生菜单概念，本库把 H.NotifyIcon 自带菜单系统作为统一方案，菜单内容直接复用 **Reactor 自己的菜单 DSL**：
 
    ```csharp
    var tray = HNotifyApp.OpenTrayIcon(new HNotifyTrayIconSpec(icon, "My App", key)
@@ -189,8 +187,7 @@ Element View(RenderContext context)
    - `ToggleMenuItem` / `RadioMenuItem` 只映射初始勾选状态，回调仅在 `SecondWindow` 模式生效；
    - `PopupMenu`（默认）= Win32 原生弹出菜单，`ShowContextMenu` 在菜单关闭前不返回（阻塞）；
    - `SecondWindow` = H.NotifyIcon 用独立窗口承载 `MenuFlyout`（进程会多一个窗口，退出判定要多留意）；
-     ⚠️ 实测：**反复创建/销毁图标**时 `SecondWindow` 模式每轮会残留 ~60KB 托管内存（H.NotifyIcon 预览模式的机制），需要反复重建的托盘请用 `PopupMenu` 模式（实测平稳，但菜单项只剩文本）；
-   - 原生菜单与 Reactor flyout 互不影响，但别把两者绑在同一个鼠标手势上（会叠两个菜单）。
+     ⚠️ 实测：**反复创建/销毁图标**时 `SecondWindow` 模式每轮会残留 ~60KB 托管内存（H.NotifyIcon 预览模式的机制），需要反复重建的托盘请用 `PopupMenu` 模式（实测平稳，但菜单项只剩文本）。
 
 ## 构建
 
@@ -204,8 +201,12 @@ dotnet build .\src\Kumo.H.NotifyIcon.Reactor\Kumo.H.NotifyIcon.Reactor.csproj
 # 单独构建示例（也可以显式指定平台）
 dotnet build .\samples\HNotifyTrayIcon.Sample\HNotifyTrayIcon.Sample.csproj -p:Platform=ARM64
 
-# 组件方式示例（UseTrayIcon + SecondWindow 原生菜单）
+# 组件方式示例（独立单元 + PopupMenu 原生菜单）
 dotnet build .\samples\HNotifyTrayIcon.ComponentSample\HNotifyTrayIcon.ComponentSample.csproj -p:Platform=ARM64
+
+# 第二个 sample 的 ARM64 Native AOT 发布（csproj 里预置了 WinAppSDK #6394 的
+# .pri/.xbf 复制 workaround；AOT 运行与自动退出已验证正常）
+dotnet publish .\samples\HNotifyTrayIcon.ComponentSample\HNotifyTrayIcon.ComponentSample.csproj -c Release -p:Platform=ARM64
 
 # 打包
 dotnet pack .\src\Kumo.H.NotifyIcon.Reactor\Kumo.H.NotifyIcon.Reactor.csproj -c Release
@@ -224,9 +225,8 @@ Kumo.H.NotifyIcon.Reactor/
 │  ├─ HNotifyApp.cs                   # 对齐 ReactorApp 的托盘注册表
 │  ├─ HNotifyComponent.cs             # 对齐 Component.UseTrayIcon
 │  ├─ HNotifyRenderContextExtensions.cs
-│  ├─ HNotifyFlyoutHostWindow.cs      # ReactorHost 渲染的 flyout 宿主窗口
 │  ├─ HNotifyIconResolver.cs          # WindowIcon / System.Drawing.Icon → HICON
 │  └─ HNotifyThreading.cs             # UI 线程校验
-├─ samples/HNotifyTrayIcon.Sample/           # preview15 同形调用示例（程序式注册 + 原生菜单两种模式）
+├─ samples/HNotifyTrayIcon.Sample/           # 程序式注册示例（原生菜单：默认 PopupMenu，--menu-second-window 切窗口托管模式）
 └─ samples/HNotifyTrayIcon.ComponentSample/  # 独立单元示例：托盘（隐藏宿主 + UseTrayIcon）与主窗口互不依赖、可反复重建（PopupMenu 菜单）
 ```

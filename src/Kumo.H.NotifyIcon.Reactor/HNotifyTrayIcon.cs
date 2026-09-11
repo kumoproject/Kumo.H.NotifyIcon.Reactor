@@ -16,8 +16,8 @@ namespace Kumo.H.NotifyIcon.Reactor;
 /// Top-level system-tray icon — the H.NotifyIcon-backed peer of Reactor
 /// v0.1.0-preview.15's <c>Microsoft.UI.Reactor.ReactorTrayIcon</c>.
 /// Created via <see cref="HNotifyApp.OpenTrayIcon"/>; provides the icon bitmap,
-/// tooltip, and click events, and reconciles a Reactor <see cref="Element"/>
-/// as its flyout via <see cref="ShowFlyout"/>.
+/// tooltip, click events, and the optional native context menu
+/// (see <see cref="HNotifyTrayIconSpec.ContextMenu"/>).
 /// </summary>
 /// <remarks>
 /// <para>
@@ -30,10 +30,9 @@ namespace Kumo.H.NotifyIcon.Reactor;
 /// <b>Backend differences vs. the native Reactor tray icon.</b> The icon is
 /// created by H.NotifyIcon's <c>TaskbarIcon</c>, which owns its own hidden
 /// message window and re-registers itself after an Explorer restart, so no
-/// hidden-window bookkeeping is needed here. The flyout is rendered by
-/// <see cref="HNotifyFlyoutHostWindow"/>, a single borderless topmost window
-/// reused per process (only one tray flyout can be open at a time, same as
-/// preview15).
+/// hidden-window bookkeeping is needed here. Menus are the backend's own (see
+/// <see cref="ContextMenu"/>); the library ships no Reactor-rendered flyout
+/// window.
 /// </para>
 /// </remarks>
 public sealed partial class HNotifyTrayIcon : IDisposable
@@ -237,10 +236,10 @@ public sealed partial class HNotifyTrayIcon : IDisposable
             taskbarIcon.CustomName = $"HNotify.TrayIcon.{key}";
         }
 
-        // The backend's tray popup stays off — Reactor-side UI is delivered by
-        // ShowFlyout. The native context menu is opt-in (spec.ContextMenu) and is
-        // applied by ApplyMenu: with no menu attached the activation stays None,
-        // so no gesture pops anything on its own.
+        // The backend's automatic tray popup stays off. The native context menu
+        // is opt-in (spec.ContextMenu) and is applied by ApplyMenu: with no menu
+        // attached the activation stays None, so no gesture pops anything on
+        // its own.
         taskbarIcon.PopupActivation = HPopupActivationMode.None;
         ApplyMenu();
 
@@ -288,26 +287,6 @@ public sealed partial class HNotifyTrayIcon : IDisposable
                 RightClick?.Invoke(this, EventArgs.Empty);
                 break;
         }
-    }
-
-    /// <summary>
-    /// Show a Reactor <see cref="Element"/> as the tray icon's flyout. UI-thread
-    /// only. Light-dismisses when the user clicks outside it or presses Escape.
-    /// </summary>
-    public void ShowFlyout(Element flyoutContent)
-    {
-        ArgumentNullException.ThrowIfNull(flyoutContent);
-        HNotifyThreading.ThrowIfNotOnUiThread(nameof(ShowFlyout));
-        if (_disposed) return;
-
-        HNotifyFlyoutHostWindow.GetOrCreate().Show(flyoutContent);
-    }
-
-    /// <summary>Dismiss the tray flyout. UI-thread only. Idempotent.</summary>
-    public void HideFlyout()
-    {
-        HNotifyThreading.ThrowIfNotOnUiThread(nameof(HideFlyout));
-        HNotifyFlyoutHostWindow.HideIfShown();
     }
 
     /// <summary>

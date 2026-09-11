@@ -126,15 +126,15 @@ public sealed record HNotifyTrayIconSpec
         => new(drawingIcon, tooltip, key, isVisible);
 
     // ── H.NotifyIcon native context menu (HNotify extensions) ──────────────
-    // preview15's tray API has no menu concept (menus are Reactor flyouts shown
-    // through ShowFlyout). These members surface H.NotifyIcon's *own* menu
-    // system, which the backend renders itself. Build the flyout with
-    // HNotifyMenu; the mode/theme fields map onto the backend's DPs 1:1.
+    // preview15's tray API has no native-menu concept. These members surface
+    // H.NotifyIcon's *own* menu system, which the backend renders itself. Build
+    // the menu with HNotifyMenu; the mode/theme fields map onto the backend's
+    // DPs 1:1.
 
     /// <summary>
     /// H.NotifyIcon's own context menu, rendered by the backend (HNotify
     /// extension; preview15 has no counterpart). <c>null</c> — the default —
-    /// keeps the backend menu disabled and preserves the preview15 behavior.
+    /// keeps the backend menu disabled, so no gesture opens anything on its own.
     /// </summary>
     /// <remarks>
     /// Build it with <c>HNotifyMenu.Create(...)</c> from Reactor's menu DSL —
