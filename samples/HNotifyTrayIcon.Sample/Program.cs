@@ -24,6 +24,7 @@ ReactorApp.Run(_ =>
 
     var mainWindowKey = WindowKey.Of("main-window");
     ReactorWindow? mainWindow = null;
+    HNotifyTrayIcon? tray = null; // assigned below, before any window can open
 
     void OpenMainWindow()
     {
@@ -45,7 +46,9 @@ ReactorApp.Run(_ =>
                 StartPosition = WindowStartPosition.CenterOnPrimary,
                 Key = mainWindowKey,
             },
-            () => new MainWindowContent());
+            // The handle is assigned right after OpenTrayIcon (below); a window
+            // can only open later (click / startup), so it is never null here.
+            () => new MainWindowContent(tray!));
 
         mainWindow = opened;
         opened.Closed += (_, _) =>
@@ -67,7 +70,7 @@ ReactorApp.Run(_ =>
     // MenuFlyout the backend needs. --menu-second-window switches the backend
     // from the native Win32 popup to its window-hosted mode; icons render in the
     // window-hosted mode, the native popup carries text only.
-    var tray = HNotifyApp.OpenTrayIcon(new HNotifyTrayIconSpec(
+    var trayHandle = HNotifyApp.OpenTrayIcon(new HNotifyTrayIconSpec(
         HNotifyWindowIcon.FromBytes(iconStream),
         "HNotify Tray Icon",
         WindowKey.Of("main-tray"))
@@ -81,11 +84,12 @@ ReactorApp.Run(_ =>
             ? HNotifyContextMenuMode.SecondWindow
             : HNotifyContextMenuMode.PopupMenu,
     });
+    tray = trayHandle;
 
     // Click/DoubleClick remain app-level events; the right-click menu is opened
     // by the backend itself (MenuActivation).
-    tray.Click += (_, _) => OpenMainWindow();
-    tray.DoubleClick += (_, _) => OpenMainWindow();
+    trayHandle.Click += (_, _) => OpenMainWindow();
+    trayHandle.DoubleClick += (_, _) => OpenMainWindow();
 
     if (!HasArgument("--silent"))
         OpenMainWindow();
@@ -94,11 +98,42 @@ ReactorApp.Run(_ =>
 bool HasArgument(string value) =>
     Environment.GetCommandLineArgs().Contains(value, StringComparer.OrdinalIgnoreCase);
 
-sealed class MainWindowContent : Component
+/// <summary>
+/// Main window content. Drives the tray icon through <see cref="HNotifyTrayIcon.Update"/>:
+/// every action builds a full spec from the current one (record <c>with</c>), and
+/// Update re-applies only the fields that actually changed.
+/// </summary>
+sealed class MainWindowContent(HNotifyTrayIcon tray) : Component
 {
-    public override Element Render() => Border(
-        VStack(12,
-            TextBlock("HNotify Tray Icon (H.NotifyIcon)").FontSize(28).Bold(),
-            TextBlock("左键打开主窗口；右键弹出 H.NotifyIcon 原生菜单。"))
-        .Padding(24));
+    public override Element Render()
+    {
+        var (tooltip, setTooltip) = UseState(tray.Spec.Tooltip);
+        var (isVisible, setIsVisible) = UseState(tray.Spec.IsVisible);
+
+        return Border(
+            VStack(12,
+                TextBlock("HNotify Tray Icon (H.NotifyIcon)").FontSize(28).Bold(),
+                TextBlock("左键打开主窗口；右键弹出 H.NotifyIcon 原生菜单。"),
+                TextBlock("Update 演示：下面每项操作都会基于当前 spec 造一份新 spec —— 只有变化的字段会被重放到托盘。"),
+
+                Button("改 Tooltip（带时间戳）", () =>
+                {
+                    var next = tray.Spec with { Tooltip = $"HNotify Tray Icon — {DateTime.Now:HH:mm:ss}" };
+                    tray.Update(next);
+                    setTooltip(next.Tooltip);
+                }),
+
+                Button(
+                    isVisible ? "隐藏图标（IsVisible = false）" : "显示图标（IsVisible = true）",
+                    () =>
+                    {
+                        var next = tray.Spec with { IsVisible = !tray.Spec.IsVisible };
+                        tray.Update(next);
+                        setIsVisible(next.IsVisible);
+                    })
+                    .AutomationName("切换托盘图标的显示/隐藏"),
+
+                TextBlock($"当前 Tooltip：{tooltip}    图标可见：{isVisible}"))
+            .Padding(24));
+    }
 }
