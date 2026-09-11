@@ -1,0 +1,6 @@
+// CsWin32 generation list (build task mode: CsWin32RunAsBuildTask=true).
+// Flyout placement: cursor position, monitor under the cursor, work area, per-monitor DPI.
+GetCursorPos
+GetDpiForMonitor
+GetMonitorInfo
+MonitorFromPoint

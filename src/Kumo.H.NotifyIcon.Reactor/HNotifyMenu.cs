@@ -109,7 +109,7 @@ public enum HNotifyContextMenuTheme
 /// popup never writes the checked state back.
 /// </para>
 /// </remarks>
-public static class HNotifyMenu
+public static partial class HNotifyMenu
 {
     /// <summary>
     /// Converts Reactor menu items (<c>MenuItem()</c> and friends) into a
@@ -295,14 +295,11 @@ public static class HNotifyMenu
         return icon;
     }
 
-    private sealed class DelegatingCommand : ICommand
+    private sealed partial class DelegatingCommand(Action onClick) : ICommand
     {
-        private readonly Action _onClick;
-
-        public DelegatingCommand(Action onClick) => _onClick = onClick;
-
         // The backend only calls Execute; no consumer needs a CanExecute changed
-        // notification, so the event has no backing storage.
+        // notification, so the event has no backing storage (custom accessors also
+        // keep CS0067 quiet for a field-like event nobody raises).
         public event EventHandler? CanExecuteChanged
         {
             add { }
@@ -311,6 +308,6 @@ public static class HNotifyMenu
 
         public bool CanExecute(object? parameter) => true;
 
-        public void Execute(object? parameter) => _onClick();
+        public void Execute(object? parameter) => onClick();
     }
 }

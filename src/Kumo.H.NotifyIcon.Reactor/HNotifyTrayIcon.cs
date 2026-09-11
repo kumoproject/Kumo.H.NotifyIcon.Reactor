@@ -36,7 +36,7 @@ namespace Kumo.H.NotifyIcon.Reactor;
 /// preview15).
 /// </para>
 /// </remarks>
-public sealed class HNotifyTrayIcon : IDisposable
+public sealed partial class HNotifyTrayIcon : IDisposable
 {
     private static int s_nextId;
 

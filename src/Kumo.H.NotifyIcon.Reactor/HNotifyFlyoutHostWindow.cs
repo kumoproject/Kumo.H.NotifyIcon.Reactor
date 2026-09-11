@@ -7,6 +7,9 @@ using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Input;
 using Windows.Graphics;
+using Windows.Win32;
+using Windows.Win32.Graphics.Gdi;
+using Windows.Win32.UI.HiDpi;
 using VirtualKey = Windows.System.VirtualKey;
 
 namespace Kumo.H.NotifyIcon.Reactor;
@@ -30,14 +33,11 @@ namespace Kumo.H.NotifyIcon.Reactor;
 /// under the cursor.
 /// </para>
 /// </remarks>
-internal sealed class HNotifyFlyoutHostWindow : IDisposable
+internal sealed partial class HNotifyFlyoutHostWindow : IDisposable
 {
     private const int FallbackWidthDip = 280;
     private const int FallbackHeightDip = 360;
     private const int ScreenMarginPx = 8;
-
-    private const uint MonitorDefaultToNearest = 2;
-    private const uint MdtEffectiveDpi = 0;
 
     private static HNotifyFlyoutHostWindow? s_instance;
     private static readonly object s_lock = new();
@@ -297,37 +297,41 @@ internal sealed class HNotifyFlyoutHostWindow : IDisposable
     }
 
     private static bool TryGetCursorEnvironment(
-        out NativePoint cursor,
+        out System.Drawing.Point cursor,
         out RectInt32 workArea,
         out uint dpi)
     {
         workArea = new RectInt32(0, 0, 1920, 1080);
         dpi = 96;
 
-        if (!GetCursorPos(out cursor)) return false;
+        if (!PInvoke.GetCursorPos(out cursor)) return false;
 
-        var monitor = MonitorFromPoint(cursor, MonitorDefaultToNearest);
+        var monitor = PInvoke.MonitorFromPoint(cursor, MONITOR_FROM_FLAGS.MONITOR_DEFAULTTONEAREST);
         workArea = GetWorkAreaOrDefault(monitor);
         dpi = GetDpiForMonitorSafe(monitor);
         return true;
     }
 
-    private static RectInt32 GetWorkAreaOrDefault(nint monitor)
+    private static unsafe RectInt32 GetWorkAreaOrDefault(HMONITOR monitor)
     {
-        if (monitor != 0)
+        if (!monitor.IsNull)
         {
-            var info = new MonitorInfo { Size = (uint)Marshal.SizeOf<MonitorInfo>() };
-            if (GetMonitorInfo(monitor, ref info)) return info.Work;
+            var info = new MONITORINFO { cbSize = (uint)sizeof(MONITORINFO) };
+            if (PInvoke.GetMonitorInfo(monitor, ref info))
+            {
+                var work = info.rcWork;
+                return new RectInt32(work.left, work.top, work.right - work.left, work.bottom - work.top);
+            }
         }
 
         return new RectInt32(0, 0, 1920, 1080);
     }
 
-    private static uint GetDpiForMonitorSafe(nint monitor)
+    private static uint GetDpiForMonitorSafe(HMONITOR monitor)
     {
-        if (monitor == 0) return 96;
+        if (monitor.IsNull) return 96;
 
-        return GetDpiForMonitor(monitor, MdtEffectiveDpi, out var dpiX, out _) == 0 && dpiX != 0
+        return PInvoke.GetDpiForMonitor(monitor, MONITOR_DPI_TYPE.MDT_EFFECTIVE_DPI, out var dpiX, out _).Succeeded && dpiX != 0
             ? dpiX
             : 96;
     }
@@ -352,34 +356,4 @@ internal sealed class HNotifyFlyoutHostWindow : IDisposable
             try { _window.Close(); } catch { /* best effort */ }
         }
     }
-
-    [StructLayout(LayoutKind.Sequential)]
-    private struct NativePoint
-    {
-        public int X;
-        public int Y;
-    }
-
-    [StructLayout(LayoutKind.Sequential)]
-    private struct MonitorInfo
-    {
-        public uint Size;
-        public RectInt32 Monitor;
-        public RectInt32 Work;
-        public uint Flags;
-    }
-
-    [DllImport("user32.dll", ExactSpelling = true)]
-    [return: MarshalAs(UnmanagedType.Bool)]
-    private static extern bool GetCursorPos(out NativePoint point);
-
-    [DllImport("user32.dll", ExactSpelling = true)]
-    private static extern nint MonitorFromPoint(NativePoint point, uint flags);
-
-    [DllImport("user32.dll", EntryPoint = "GetMonitorInfoW", ExactSpelling = true)]
-    [return: MarshalAs(UnmanagedType.Bool)]
-    private static extern bool GetMonitorInfo(nint monitor, ref MonitorInfo info);
-
-    [DllImport("Shcore.dll")]
-    private static extern int GetDpiForMonitor(nint monitor, uint dpiType, out uint dpiX, out uint dpiY);
 }
