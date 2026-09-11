@@ -189,6 +189,7 @@ Element View(RenderContext context)
    - `ToggleMenuItem` / `RadioMenuItem` 只映射初始勾选状态，回调仅在 `SecondWindow` 模式生效；
    - `PopupMenu`（默认）= Win32 原生弹出菜单，`ShowContextMenu` 在菜单关闭前不返回（阻塞）；
    - `SecondWindow` = H.NotifyIcon 用独立窗口承载 `MenuFlyout`（进程会多一个窗口，退出判定要多留意）；
+     ⚠️ 实测：**反复创建/销毁图标**时 `SecondWindow` 模式每轮会残留 ~60KB 托管内存（H.NotifyIcon 预览模式的机制），需要反复重建的托盘请用 `PopupMenu` 模式（实测平稳，但菜单项只剩文本）；
    - 原生菜单与 Reactor flyout 互不影响，但别把两者绑在同一个鼠标手势上（会叠两个菜单）。
 
 ## 构建
@@ -227,5 +228,5 @@ Kumo.H.NotifyIcon.Reactor/
 │  ├─ HNotifyIconResolver.cs          # WindowIcon / System.Drawing.Icon → HICON
 │  └─ HNotifyThreading.cs             # UI 线程校验
 ├─ samples/HNotifyTrayIcon.Sample/           # preview15 同形调用示例（程序式注册 + 原生菜单两种模式）
-└─ samples/HNotifyTrayIcon.ComponentSample/  # UseTrayIcon 组件方式示例（SecondWindow 菜单 + 托盘开关 / i18n / 关闭策略）
+└─ samples/HNotifyTrayIcon.ComponentSample/  # 独立单元示例：托盘（隐藏宿主 + UseTrayIcon）与主窗口互不依赖、可反复重建（PopupMenu 菜单）
 ```

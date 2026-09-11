@@ -4,12 +4,15 @@ using Microsoft.UI.Reactor.Core;
 using Microsoft.UI.Xaml;
 using static Microsoft.UI.Reactor.Factories;
 
-// Component-style tray (UseTrayIcon): the icon is owned by a component and is
-// closed automatically when that component unmounts. On top of the SecondWindow
-// native menu (hosted by a window of H.NotifyIcon's own making — non-blocking,
-// full XAML incl. icons), the window demonstrates three common tray-app
-// switches: tray resident on/off, live text updates (i18n), and what closing
-// the main window does.
+// Two fully independent units — neither owns the other's lifetime:
+//
+//   tray unit   = a never-shown host window (WindowSpec.ActivateOnOpen = false)
+//                 + TrayHostComponent (HNotifyComponent.UseTrayIcon inside)
+//   main window = its own window + MainPanel component
+//
+// Each can be created and destroyed any number of times without touching the
+// other. When BOTH are gone the process exits; destroying either unit releases
+// everything that unit created, so repeated cycles stay flat.
 
 ReactorApp.ShutdownPolicy = ShutdownPolicy.Explicit;
 
@@ -19,167 +22,163 @@ ReactorApp.Run(_ =>
     // the message loop when the last window closes. (Windows App SDK 1.8+)
     Application.Current.DispatcherShutdownMode = DispatcherShutdownMode.OnExplicitShutdown;
 
-    var windowKey = WindowKey.Of("main-window");
-    var host = new HostFlags();
+    var host = new AppHost();
 
-    var window = ReactorApp.OpenWindow(
-        new WindowSpec
-        {
-            Title = "HNotify Component Sample (UseTrayIcon)",
-            Width = 680,
-            Height = 500,
-            StartPosition = WindowStartPosition.CenterOnPrimary,
-            Key = windowKey,
-        },
-        () => new TrayHostComponent(windowKey, host));
-
-    window.Closing += (_, e) =>
-    {
-        if (e.Reason != WindowCloseReason.UserClosed) return;
-
-        // Common tray-app rule: with no resident tray icon, closing the window
-        // exits the app; with one, the switch decides hide-and-stay vs exit.
-        host.ExitOnWindowClose = host.CloseExits || !host.TrayEnabled;
-        if (host.ExitOnWindowClose) return; // let it close; Closed ends the process
-
-        e.Cancel = true;
-        window.Hide();
-    };
-
-    // A cancelled close never raises Closed, so reaching here means the close
-    // proceeded — under Explicit policy we own the actual process exit.
-    window.Closed += (_, _) =>
-    {
-        if (host.ExitOnWindowClose) ReactorApp.Exit();
-    };
+    host.EnableTray();     // independent unit #1
+    host.OpenMainWindow(); // independent unit #2
 });
 
 /// <summary>
-/// State shared between the component (which owns it) and the window close
-/// handlers (which live outside the component tree).
+/// Application-level orchestrator: creates/destroys the two independent units
+/// and applies the only global rule — exit once nothing is left.
 /// </summary>
-sealed class HostFlags
+sealed class AppHost
 {
-    public bool TrayEnabled { get; set; } = true;
-    public bool CloseExits { get; set; }
-    public bool ExitOnWindowClose { get; set; }
+    private static readonly WindowKey TrayHostKey = WindowKey.Of("tray-host");
+    private static readonly WindowKey MainWindowKey = WindowKey.Of("main-window");
+
+    private ReactorWindow? _trayHostWindow;
+    private ReactorWindow? _mainWindow;
+    private bool _exiting;
+
+    public int TrayUnitCreations { get; private set; }
+    public int MainWindowCreations { get; private set; }
+
+    public bool TrayActive => _trayHostWindow is not null;
+
+    // ── unit #1: the tray ─────────────────────────────────────────────────
+
+    /// <summary>
+    /// Creates the tray unit: a hidden host window whose component owns the
+    /// tray icon. The window is never shown — ActivateOnOpen = false mounts the
+    /// tree (hooks run) without ever activating/displaying the window.
+    /// </summary>
+    public void EnableTray()
+    {
+        if (_trayHostWindow is not null) return;
+
+        _trayHostWindow = ReactorApp.OpenWindow(
+            new WindowSpec
+            {
+                Title = "Tray host (hidden, never shown)",
+                Key = TrayHostKey,
+                ActivateOnOpen = false,
+                ShowInSwitcher = false,
+            },
+            () => new TrayHostComponent(this));
+
+        TrayUnitCreations++;
+    }
+
+    /// <summary>
+    /// Destroys the tray unit. Closing the host window unmounts the component,
+    /// so UseTrayIcon's cleanup closes the tray icon and the component disposes
+    /// its own bitmap — the unit releases everything it created.
+    /// </summary>
+    public void DisableTray()
+    {
+        var window = _trayHostWindow;
+        if (window is null) return;
+
+        _trayHostWindow = null;
+        window.Close();
+        MaybeExit();
+    }
+
+    // ── unit #2: the main window ──────────────────────────────────────────
+
+    public void OpenMainWindow()
+    {
+        if (_mainWindow is { } existing)
+        {
+            existing.Show();
+            existing.Activate();
+            return;
+        }
+
+        var window = ReactorApp.OpenWindow(
+            new WindowSpec
+            {
+                Title = "HNotify Independent Units Sample",
+                Width = 720,
+                Height = 520,
+                StartPosition = WindowStartPosition.CenterOnPrimary,
+                Key = MainWindowKey,
+            },
+            () => new MainPanel(this));
+
+        _mainWindow = window;
+        MainWindowCreations++;
+
+        window.Closed += (_, _) =>
+        {
+            if (ReferenceEquals(_mainWindow, window)) _mainWindow = null;
+            MaybeExit();
+        };
+    }
+
+    /// <summary>Destroys the main window (real close — nothing is hidden).</summary>
+    public void CloseMainWindow() => _mainWindow?.Close();
+
+    public void ExitApp()
+    {
+        _exiting = true;
+        DisableTray();
+        ReactorApp.Exit();
+    }
+
+    /// <summary>The only global lifetime rule: exit when both units are gone.</summary>
+    private void MaybeExit()
+    {
+        if (_exiting) return;
+        if (_mainWindow is null && _trayHostWindow is null) ReactorApp.Exit();
+    }
 }
 
 /// <summary>
-/// Owns the tray icon through <c>HNotifyComponent.UseTrayIcon</c>. Function
-/// components get the same hook via <c>context.UseTrayIcon(spec)</c>.
+/// The tray unit's root. Mounted in the never-shown host window; owns the tray
+/// icon via UseTrayIcon. Mount → icon exists; unmount (host window closed) →
+/// icon closed and the caller-owned bitmap disposed.
 /// </summary>
 sealed class TrayHostComponent : HNotifyComponent
 {
-    private readonly WindowKey _windowKey;
-    private readonly HostFlags _host;
-
-    // The icon is built once: rebuilding byte[] → Icon on every render would
-    // defeat the spec diffing that the hook's Update() call performs.
     private readonly System.Drawing.Icon _icon = HNotifyWindowIcon.FromBytes(LoadEmbeddedIcon());
+    private readonly HNotifyTrayIconSpec _spec;
 
-    private HNotifyTrayIconSpec? _spec;
-    private bool _specEnglish;
-    private bool _specEnabled;
-    private bool _hasSpec;
-
-    public TrayHostComponent(WindowKey windowKey, HostFlags host)
+    public TrayHostComponent(AppHost host)
     {
-        _windowKey = windowKey;
-        _host = host;
+        _spec = new HNotifyTrayIconSpec(_icon, "HNotify independent tray", WindowKey.Of("tray"))
+        {
+            ContextMenu = HNotifyMenu.Create(
+                MenuItem("打开主窗口", host.OpenMainWindow),
+                MenuItem("关闭主窗口", host.CloseMainWindow),
+                MenuSeparator(),
+                MenuItem("退出", host.ExitApp)),
+            MenuActivation = HNotifyMenuActivation.RightClick,
+
+            // PopupMenu, not SecondWindow: measured — cycling a TaskbarIcon with
+            // SecondWindow mode retains ~60 KB per create/destroy (H.NotifyIcon
+            // preview mode), while PopupMenu cycles flat. This unit exists to be
+            // created/destroyed repeatedly, so popup mode it is.
+            // Trade-off: popup mode renders text-only items (no icons).
+            ContextMenuMode = HNotifyContextMenuMode.PopupMenu,
+        };
     }
 
     public override Element Render()
     {
-        var (english, setEnglish) = UseState(false);
-        var (trayEnabled, setTrayEnabled) = UseState(true);
-        var (closeExits, setCloseExits) = UseState(false);
+        // Opened on first render; closed by the hook's cleanup on unmount.
+        UseTrayIcon(_spec);
 
-        // Window close handlers run outside the tree; keep their copy in sync.
+        // The bitmap is caller-owned (the tray gets a clone) — release it with
+        // the unit so repeated create/destroy cycles stay flat.
         UseEffect(() =>
         {
-            _host.TrayEnabled = trayEnabled;
-            _host.CloseExits = closeExits;
-        }, trayEnabled, closeExits);
+            return () => _icon.Dispose();
+        });
 
-        // Opened on first render, closed automatically on unmount. Rebuilt spec
-        // flows through the hook's Update() — only changed fields re-apply.
-        var tray = UseTrayIcon(BuildSpec(english, trayEnabled));
-
-        UseEffect(() =>
-        {
-            if (tray is null) return () => { };
-            EventHandler onClick = (_, _) => ShowMainWindow();
-            tray.Click += onClick;
-            return () => tray.Click -= onClick;
-        }, tray ?? (object)"no-tray");
-
-        string T(string zh, string en) => english ? en : zh;
-
-        return Border(
-            VStack(18,
-                TextBlock(T("组件方式托盘（UseTrayIcon）", "Component-style tray (UseTrayIcon)")).FontSize(26).Bold(),
-                TextBlock(T(
-                    "托盘图标归本组件所有；右键菜单为 SecondWindow 模式（独立窗口承载，非阻塞）。",
-                    "The tray icon is owned by this component; the right-click menu uses SecondWindow mode (its own window, non-blocking).")),
-
-                ToggleSwitch(
-                    trayEnabled,
-                    setTrayEnabled,
-                    header: T("托盘图标", "Tray icon"),
-                    onContent: T("常驻", "On"),
-                    offContent: T("关闭", "Off")),
-                TextBlock(T(
-                    "关闭后图标从通知区域消失（改 spec 的 IsVisible，经 Update 重放到 shell）。",
-                    "Turning it off removes the icon from the notification area (spec IsVisible, re-applied through Update).")),
-
-                ToggleSwitch(
-                    english,
-                    setEnglish,
-                    header: T("界面 / 托盘文案", "UI / tray text"),
-                    onContent: "EN",
-                    offContent: "中文"),
-                TextBlock(T(
-                    "切换后 tooltip 与菜单文案即时更新（演示 Update 的增量重放）。",
-                    "Toggling updates the tooltip and menu text live (Update re-applies only changed fields).")),
-
-                ToggleSwitch(
-                    closeExits,
-                    setCloseExits,
-                    header: T("关闭主窗口时", "Closing the main window"),
-                    onContent: T("退出", "Exit"),
-                    offContent: T("隐藏驻留", "Hide")),
-                TextBlock(T(
-                    "托盘关闭时，无论此开关如何，关窗都会退出进程。",
-                    "With the tray icon off, closing the window exits regardless of this switch.")))
-            .Padding(24));
-    }
-
-    private HNotifyTrayIconSpec BuildSpec(bool english, bool trayEnabled)
-    {
-        // Rebuild only when something the tray shows actually changed.
-        if (_hasSpec && _specEnglish == english && _specEnabled == trayEnabled) return _spec!;
-        (_specEnglish, _specEnabled, _hasSpec) = (english, trayEnabled, true);
-
-        var tooltip = english ? "HNotify Component Tray" : "HNotify 组件托盘";
-        _spec = new HNotifyTrayIconSpec(_icon, tooltip, WindowKey.Of("component-tray"))
-        {
-            IsVisible = trayEnabled,
-            ContextMenu = HNotifyMenu.Create(
-                MenuItem(english ? "Show window" : "显示主窗口", ShowMainWindow, icon: "Home"),
-                MenuSeparator(),
-                MenuItem(english ? "Exit" : "退出", () => ReactorApp.Exit())),
-            MenuActivation = HNotifyMenuActivation.RightClick,
-            ContextMenuMode = HNotifyContextMenuMode.SecondWindow,
-        };
-        return _spec;
-    }
-
-    private void ShowMainWindow()
-    {
-        var window = ReactorApp.FindWindow(_windowKey);
-        window?.Show();
-        window?.Activate();
+        // The host window is never shown; the component has nothing to draw.
+        return TextBlock(string.Empty);
     }
 
     private static byte[] LoadEmbeddedIcon()
@@ -190,5 +189,45 @@ sealed class TrayHostComponent : HNotifyComponent
         using var buffer = new MemoryStream();
         stream.CopyTo(buffer);
         return buffer.ToArray();
+    }
+}
+
+/// <summary>
+/// The main window's content. Knows nothing about tray internals — it only
+/// calls the orchestrator's unit-level operations.
+/// </summary>
+sealed class MainPanel : Component
+{
+    private readonly AppHost _host;
+
+    public MainPanel(AppHost host) => _host = host;
+
+    public override Element Render()
+    {
+        var (trayOn, setTrayOn) = UseState(_host.TrayActive);
+
+        return Border(
+            VStack(18,
+                TextBlock("两个互不依赖的单元").FontSize(26).Bold(),
+                TextBlock("主窗口与托盘各自独立：关掉一个不影响另一个，每个都可反复创建、销毁。"),
+                TextBlock("托盘单元 = 隐藏宿主窗口（ActivateOnOpen=false，从未显示）+ UseTrayIcon 组件。"),
+                TextBlock("两者都关闭后，进程自动退出——这是唯一的全局规则。"),
+
+                ToggleSwitch(
+                    trayOn,
+                    on =>
+                    {
+                        if (on) _host.EnableTray(); else _host.DisableTray();
+                        setTrayOn(on);
+                    },
+                    header: "托盘单元",
+                    onContent: "启用",
+                    offContent: "停用"),
+
+                Button("销毁主窗口（托盘不受影响）", _host.CloseMainWindow),
+                TextBlock("重新打开主窗口：右键托盘图标 → 打开主窗口。"),
+
+                TextBlock($"主窗口创建次数：{_host.MainWindowCreations}    托盘单元创建次数：{_host.TrayUnitCreations}"))
+            .Padding(24));
     }
 }
