@@ -203,6 +203,9 @@ dotnet build .\src\Kumo.H.NotifyIcon.Reactor\Kumo.H.NotifyIcon.Reactor.csproj
 # 单独构建示例（也可以显式指定平台）
 dotnet build .\samples\HNotifyTrayIcon.Sample\HNotifyTrayIcon.Sample.csproj -p:Platform=ARM64
 
+# 组件方式示例（UseTrayIcon + SecondWindow 原生菜单）
+dotnet build .\samples\HNotifyTrayIcon.ComponentSample\HNotifyTrayIcon.ComponentSample.csproj -p:Platform=ARM64
+
 # 打包
 dotnet pack .\src\Kumo.H.NotifyIcon.Reactor\Kumo.H.NotifyIcon.Reactor.csproj -c Release
 ```
@@ -223,5 +226,6 @@ Kumo.H.NotifyIcon.Reactor/
 │  ├─ HNotifyFlyoutHostWindow.cs      # ReactorHost 渲染的 flyout 宿主窗口
 │  ├─ HNotifyIconResolver.cs          # WindowIcon / System.Drawing.Icon → HICON
 │  └─ HNotifyThreading.cs             # UI 线程校验
-└─ samples/HNotifyTrayIcon.Sample/    # preview15 同形调用示例
+├─ samples/HNotifyTrayIcon.Sample/           # preview15 同形调用示例（程序式注册 + 原生菜单两种模式）
+└─ samples/HNotifyTrayIcon.ComponentSample/  # UseTrayIcon 组件方式示例（SecondWindow 菜单 + 托盘开关 / i18n / 关闭策略）
 ```
