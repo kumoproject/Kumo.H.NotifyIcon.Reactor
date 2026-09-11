@@ -100,6 +100,8 @@ Element View(RenderContext context)
 | --- | --- | --- |
 | `TrayIconSpec(Icon, Tooltip, Key, IsVisible)` | `HNotifyTrayIconSpec(Icon, Tooltip, Key, IsVisible)` | 位置参数与默认值一致；额外提供 `System.Drawing.Icon` 构造与 `FromDrawingIcon` 工厂 |
 | `WindowIcon.FromBytes(bytes)`（preview15 新增） | `HNotifyWindowIcon.FromBytes(byte[] / Stream)` | 临时替身；返回 `System.Drawing.Icon`，可直接传给 spec；仅支持 `.ico` 字节 |
+| —（preview15 无原生菜单） | `HNotifyTrayIconSpec.ContextMenu` + `HNotifyMenu.Create(Reactor 菜单 DSL)` + `MenuActivation / ContextMenuMode / ContextMenuTheme` | HNotify 扩展：直接用 H.NotifyIcon 自带菜单，菜单内容就是 Reactor 的 `MenuItem()`/`MenuSeparator()`，见差异第 9 条 |
+| — | `HNotifyTrayIcon.ShowContextMenu(point)` / `CloseContextMenu()` | 手动显示/关闭原生菜单（配合 `MenuActivation = None`）；PopupMenu 模式下为阻塞调用 |
 | `ReactorApp.OpenTrayIcon(spec)` | `HNotifyApp.OpenTrayIcon(spec)` | 同样的 UI 线程校验、同样的失败回滚（注销 + dispose + 重抛） |
 | `ReactorApp.TrayIcons` | `HNotifyApp.TrayIcons` | copy-on-write 快照，任意线程可读 |
 | `ReactorApp.FindTrayIcon(key)` | `HNotifyApp.FindTrayIcon(key)` | |
@@ -166,6 +168,27 @@ Element View(RenderContext context)
    `InvalidOperationException`。
 8. **图标更新**：`Update`/属性 setter 只在图标源引用变化时重新加载；`System.Drawing.Icon` 每次都会克隆，
    调用方保留所有权。
+9. **原生菜单（HNotify 扩展）**：默认关闭 H.NotifyIcon 自带菜单（保持 preview15 的 `ShowFlyout` 行为），需要时直接复用 **Reactor 自己的菜单 DSL**：
+
+   ```csharp
+   var tray = HNotifyApp.OpenTrayIcon(new HNotifyTrayIconSpec(icon, "My App", key)
+   {
+       ContextMenu = HNotifyMenu.Create(          // ← 吃 Reactor 的 MenuItem()/MenuSeparator()
+           MenuItem("打开主窗口", OpenMainWindow),
+           MenuSeparator(),
+           MenuItem("退出", () => ReactorApp.Exit())),
+       MenuActivation = HNotifyMenuActivation.RightClick,
+   });
+   ```
+
+   相关成员：`MenuActivation`（默认 `RightClick`；`None` = 只手动显示）、`ContextMenuMode`、`ContextMenuTheme`、
+   `CloseContextMenuOnItemClick`，以及 `HNotifyTrayIcon.ShowContextMenu(point)` / `CloseContextMenu()`。要点：
+   - `HNotifyMenu.Create(...)` 接受 `MenuItem()` / `MenuSeparator()` / `MenuSubItem()` / `ToggleMenuItem()` / `RadioMenuItem()`，
+     转换成 H.NotifyIcon 需要的 `MenuFlyout`；菜单项动作走 `ICommand`（`PopupMenu` 模式下 H.NotifyIcon 只执行 `Command`，不会触发 `Click`）；
+   - 图标 / 快捷键 / AccessKey / Description 不参与转换；`ToggleMenuItem` / `RadioMenuItem` 只映射初始勾选状态，回调仅在 `SecondWindow` 模式生效；
+   - `PopupMenu`（默认）= Win32 原生弹出菜单，`ShowContextMenu` 在菜单关闭前不返回（阻塞）；
+   - `SecondWindow` = H.NotifyIcon 用独立窗口承载 `MenuFlyout`（进程会多一个窗口，退出判定要多留意）；
+   - 原生菜单与 Reactor flyout 互不影响，但别把两者绑在同一个鼠标手势上（会叠两个菜单）。
 
 ## 构建
 
@@ -192,6 +215,7 @@ Kumo.H.NotifyIcon.Reactor/
 │  ├─ HNotifyTrayIconSpec.cs          # 对齐 preview15 TrayIconSpec
 │  ├─ HNotifyTrayIcon.cs              # 对齐 preview15 ReactorTrayIcon（H.NotifyIcon 后端）
 │  ├─ HNotifyWindowIcon.cs            # 对齐 preview15 WindowIcon.FromBytes（临时替身）
+│  ├─ HNotifyMenu.cs                  # H.NotifyIcon 原生菜单（HNotify 扩展）
 │  ├─ HNotifyApp.cs                   # 对齐 ReactorApp 的托盘注册表
 │  ├─ HNotifyComponent.cs             # 对齐 Component.UseTrayIcon
 │  ├─ HNotifyRenderContextExtensions.cs

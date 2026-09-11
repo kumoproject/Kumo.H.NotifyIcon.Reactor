@@ -2,10 +2,13 @@ using System.Diagnostics;
 using Microsoft.UI.Reactor;
 using Microsoft.UI.Reactor.Core;
 using Microsoft.UI.Xaml;
+using Microsoft.UI.Xaml.Controls;
 using HTaskbarIcon = global::H.NotifyIcon.TaskbarIcon;
 using HMouseEvent = global::H.NotifyIcon.Core.MouseEvent;
 using HMouseEventReceivedEventArgs = global::H.NotifyIcon.Core.MessageWindow.MouseEventReceivedEventArgs;
 using HPopupActivationMode = global::H.NotifyIcon.Core.PopupActivationMode;
+using HContextMenuMode = global::H.NotifyIcon.ContextMenuMode;
+using HPopupMenuThemeMode = global::H.NotifyIcon.Core.PopupMenuThemeMode;
 
 namespace Kumo.H.NotifyIcon.Reactor;
 
@@ -119,6 +122,84 @@ public sealed class HNotifyTrayIcon : IDisposable
         }
     }
 
+    // ── H.NotifyIcon native context menu (HNotify extensions) ──────────────
+
+    /// <summary>
+    /// H.NotifyIcon's own context menu (HNotify extension; preview15 has no
+    /// counterpart). <c>null</c> disables it. Mutating re-applies the menu.
+    /// </summary>
+    public MenuFlyout? ContextMenu
+    {
+        get => _spec.ContextMenu;
+        set
+        {
+            HNotifyThreading.ThrowIfNotOnUiThread(nameof(ContextMenu));
+            if (_disposed || ReferenceEquals(_spec.ContextMenu, value)) return;
+
+            _spec = _spec with { ContextMenu = value };
+            ApplyMenu();
+        }
+    }
+
+    /// <summary>
+    /// When the native menu opens on its own. Only effective while
+    /// <see cref="ContextMenu"/> is set. Mutating re-applies the menu.
+    /// </summary>
+    public HNotifyMenuActivation MenuActivation
+    {
+        get => _spec.MenuActivation;
+        set
+        {
+            HNotifyThreading.ThrowIfNotOnUiThread(nameof(MenuActivation));
+            if (_disposed || _spec.MenuActivation == value) return;
+
+            _spec = _spec with { MenuActivation = value };
+            ApplyMenu();
+        }
+    }
+
+    /// <summary>How the native menu is rendered. Mutating re-applies the menu.</summary>
+    public HNotifyContextMenuMode ContextMenuMode
+    {
+        get => _spec.ContextMenuMode;
+        set
+        {
+            HNotifyThreading.ThrowIfNotOnUiThread(nameof(ContextMenuMode));
+            if (_disposed || _spec.ContextMenuMode == value) return;
+
+            _spec = _spec with { ContextMenuMode = value };
+            ApplyMenu();
+        }
+    }
+
+    /// <summary>Theme of the native popup menu. Mutating re-applies the menu.</summary>
+    public HNotifyContextMenuTheme ContextMenuTheme
+    {
+        get => _spec.ContextMenuTheme;
+        set
+        {
+            HNotifyThreading.ThrowIfNotOnUiThread(nameof(ContextMenuTheme));
+            if (_disposed || _spec.ContextMenuTheme == value) return;
+
+            _spec = _spec with { ContextMenuTheme = value };
+            ApplyMenu();
+        }
+    }
+
+    /// <summary>Whether the window-hosted menu closes on item click. Mutating re-applies the menu.</summary>
+    public bool CloseContextMenuOnItemClick
+    {
+        get => _spec.CloseContextMenuOnItemClick;
+        set
+        {
+            HNotifyThreading.ThrowIfNotOnUiThread(nameof(CloseContextMenuOnItemClick));
+            if (_disposed || _spec.CloseContextMenuOnItemClick == value) return;
+
+            _spec = _spec with { CloseContextMenuOnItemClick = value };
+            ApplyMenu();
+        }
+    }
+
     /// <summary>Fires on the UI thread when the user left-clicks the icon (single click).</summary>
     public event EventHandler? Click;
 
@@ -156,10 +237,12 @@ public sealed class HNotifyTrayIcon : IDisposable
             taskbarIcon.CustomName = $"HNotify.TrayIcon.{key}";
         }
 
-        // The library owns Click/DoubleClick/RightClick and ShowFlyout, so the
-        // backend must not pop its own menu/popup on any mouse gesture.
-        taskbarIcon.MenuActivation = HPopupActivationMode.None;
+        // The backend's tray popup stays off — Reactor-side UI is delivered by
+        // ShowFlyout. The native context menu is opt-in (spec.ContextMenu) and is
+        // applied by ApplyMenu: with no menu attached the activation stays None,
+        // so no gesture pops anything on its own.
         taskbarIcon.PopupActivation = HPopupActivationMode.None;
+        ApplyMenu();
 
         taskbarIcon.ToolTipText = _spec.Tooltip ?? string.Empty;
 
@@ -228,6 +311,34 @@ public sealed class HNotifyTrayIcon : IDisposable
     }
 
     /// <summary>
+    /// Show the native context menu at <paramref name="position"/> (screen
+    /// coordinates in physical pixels, exactly what the backend's
+    /// <c>TrackPopupMenuEx</c> expects). HNotify extension; mainly useful with
+    /// <see cref="HNotifyMenuActivation.None"/>. UI-thread only. In
+    /// <see cref="HNotifyContextMenuMode.PopupMenu"/> mode this enters the Win32
+    /// menu loop and does not return until the menu closes (backend behavior).
+    /// </summary>
+    public void ShowContextMenu(System.Drawing.Point position)
+    {
+        HNotifyThreading.ThrowIfNotOnUiThread(nameof(ShowContextMenu));
+        if (_disposed || _taskbarIcon is null || _spec.ContextMenu is null) return;
+
+        _taskbarIcon.ShowContextMenu(position);
+    }
+
+    /// <summary>
+    /// Close the native context menu if it is open. HNotify extension. UI-thread
+    /// only. Idempotent.
+    /// </summary>
+    public void CloseContextMenu()
+    {
+        HNotifyThreading.ThrowIfNotOnUiThread(nameof(CloseContextMenu));
+        if (_disposed || _taskbarIcon is null) return;
+
+        _taskbarIcon.CloseContextMenu();
+    }
+
+    /// <summary>
     /// Diff <paramref name="next"/> against the current spec and re-apply only
     /// changed fields. UI-thread only.
     /// </summary>
@@ -245,6 +356,15 @@ public sealed class HNotifyTrayIcon : IDisposable
             !ReferenceEquals(prev.DrawingIcon, next.DrawingIcon))
         {
             ApplyIcon();
+        }
+
+        if (!ReferenceEquals(prev.ContextMenu, next.ContextMenu) ||
+            prev.MenuActivation != next.MenuActivation ||
+            prev.ContextMenuMode != next.ContextMenuMode ||
+            prev.ContextMenuTheme != next.ContextMenuTheme ||
+            prev.CloseContextMenuOnItemClick != next.CloseContextMenuOnItemClick)
+        {
+            ApplyMenu();
         }
 
         if (!string.Equals(prev.Tooltip, next.Tooltip, StringComparison.Ordinal))
@@ -305,5 +425,63 @@ public sealed class HNotifyTrayIcon : IDisposable
     {
         if (_taskbarIcon is null) return;
         _taskbarIcon.Visibility = _spec.IsVisible ? Visibility.Visible : Visibility.Collapsed;
+    }
+
+    private void ApplyMenu()
+    {
+        if (_taskbarIcon is null) return;
+
+        var menu = _spec.ContextMenu;
+
+        // No menu attached → keep the backend from opening anything on its own,
+        // exactly like before this extension existed.
+        _taskbarIcon.MenuActivation = menu is null
+            ? HPopupActivationMode.None
+            : MapActivation(_spec.MenuActivation);
+        _taskbarIcon.ContextFlyout = menu;
+        _taskbarIcon.ContextMenuMode = MapMode(_spec.ContextMenuMode);
+        _taskbarIcon.ContextMenuThemeMode = MapTheme(_spec.ContextMenuTheme);
+        _taskbarIcon.CloseContextMenuOnItemClick = _spec.CloseContextMenuOnItemClick;
+    }
+
+    // The public enums mirror the backend's values one-to-one; the mappings stay
+    // explicit so the public API does not leak H.NotifyIcon types and a backend
+    // enum change cannot silently change this library's meaning.
+    private static HPopupActivationMode MapActivation(HNotifyMenuActivation activation)
+    {
+        return activation switch
+        {
+            HNotifyMenuActivation.None => HPopupActivationMode.None,
+            HNotifyMenuActivation.LeftClick => HPopupActivationMode.LeftClick,
+            HNotifyMenuActivation.RightClick => HPopupActivationMode.RightClick,
+            HNotifyMenuActivation.DoubleClick => HPopupActivationMode.DoubleClick,
+            HNotifyMenuActivation.LeftOrRightClick => HPopupActivationMode.LeftOrRightClick,
+            HNotifyMenuActivation.LeftOrDoubleClick => HPopupActivationMode.LeftOrDoubleClick,
+            HNotifyMenuActivation.MiddleClick => HPopupActivationMode.MiddleClick,
+            HNotifyMenuActivation.All => HPopupActivationMode.All,
+            _ => throw new ArgumentOutOfRangeException(nameof(activation), activation, "Unknown menu activation."),
+        };
+    }
+
+    private static HContextMenuMode MapMode(HNotifyContextMenuMode mode)
+    {
+        return mode switch
+        {
+            HNotifyContextMenuMode.PopupMenu => HContextMenuMode.PopupMenu,
+            HNotifyContextMenuMode.SecondWindow => HContextMenuMode.SecondWindow,
+            _ => throw new ArgumentOutOfRangeException(nameof(mode), mode, "Unknown context menu mode."),
+        };
+    }
+
+    private static HPopupMenuThemeMode MapTheme(HNotifyContextMenuTheme theme)
+    {
+        return theme switch
+        {
+            HNotifyContextMenuTheme.Default => HPopupMenuThemeMode.Default,
+            HNotifyContextMenuTheme.System => HPopupMenuThemeMode.System,
+            HNotifyContextMenuTheme.Light => HPopupMenuThemeMode.Light,
+            HNotifyContextMenuTheme.Dark => HPopupMenuThemeMode.Dark,
+            _ => throw new ArgumentOutOfRangeException(nameof(theme), theme, "Unknown context menu theme."),
+        };
     }
 }

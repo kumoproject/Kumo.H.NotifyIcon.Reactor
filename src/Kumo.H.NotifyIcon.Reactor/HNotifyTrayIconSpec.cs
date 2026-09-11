@@ -1,4 +1,5 @@
 using Microsoft.UI.Reactor;
+using Microsoft.UI.Xaml.Controls;
 
 namespace Kumo.H.NotifyIcon.Reactor;
 
@@ -123,4 +124,52 @@ public sealed record HNotifyTrayIconSpec
         WindowKey? key = null,
         bool isVisible = true)
         => new(drawingIcon, tooltip, key, isVisible);
+
+    // ── H.NotifyIcon native context menu (HNotify extensions) ──────────────
+    // preview15's tray API has no menu concept (menus are Reactor flyouts shown
+    // through ShowFlyout). These members surface H.NotifyIcon's *own* menu
+    // system, which the backend renders itself. Build the flyout with
+    // HNotifyMenu; the mode/theme fields map onto the backend's DPs 1:1.
+
+    /// <summary>
+    /// H.NotifyIcon's own context menu, rendered by the backend (HNotify
+    /// extension; preview15 has no counterpart). <c>null</c> — the default —
+    /// keeps the backend menu disabled and preserves the preview15 behavior.
+    /// </summary>
+    /// <remarks>
+    /// Build it with <c>HNotifyMenu.Create(...)</c> from Reactor's menu DSL —
+    /// <c>MenuItem()</c> / <c>MenuSeparator()</c> / <c>MenuSubItem()</c> etc. from
+    /// <c>Microsoft.UI.Reactor.Factories</c>. Actions are wired through
+    /// <c>ICommand</c> because in <see cref="HNotifyContextMenuMode.PopupMenu"/>
+    /// mode the backend dispatches through the command only and never raises
+    /// <c>MenuFlyoutItem.Click</c>.
+    /// </remarks>
+    public MenuFlyout? ContextMenu { get; init; }
+
+    /// <summary>
+    /// When the native context menu opens on its own
+    /// (default <see cref="HNotifyMenuActivation.RightClick"/>). Only takes effect
+    /// when <see cref="ContextMenu"/> is set;
+    /// <see cref="HNotifyMenuActivation.None"/> means "show it from code instead"
+    /// (<c>HNotifyTrayIcon.ShowContextMenu</c>). (HNotify extension)
+    /// </summary>
+    public HNotifyMenuActivation MenuActivation { get; init; } = HNotifyMenuActivation.RightClick;
+
+    /// <summary>
+    /// How the native menu is rendered
+    /// (default <see cref="HNotifyContextMenuMode.PopupMenu"/>). (HNotify extension)
+    /// </summary>
+    public HNotifyContextMenuMode ContextMenuMode { get; init; } = HNotifyContextMenuMode.PopupMenu;
+
+    /// <summary>
+    /// Theme of the native popup menu
+    /// (default <see cref="HNotifyContextMenuTheme.System"/>). (HNotify extension)
+    /// </summary>
+    public HNotifyContextMenuTheme ContextMenuTheme { get; init; } = HNotifyContextMenuTheme.System;
+
+    /// <summary>
+    /// Whether the menu closes when an item is chosen (default <c>true</c>). Only
+    /// consulted by <see cref="HNotifyContextMenuMode.SecondWindow"/>. (HNotify extension)
+    /// </summary>
+    public bool CloseContextMenuOnItemClick { get; init; } = true;
 }
