@@ -1,0 +1,33 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0-windows10.0.26100.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <LangVersion>latest</LangVersion>
+    <Platforms>AnyCPU;ARM64;x64</Platforms>
+    <RootNamespace>Kumo.H.NotifyIcon.Reactor</RootNamespace>
+    <AssemblyName>Kumo.H.NotifyIcon.Reactor</AssemblyName>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <NoWarn>$(NoWarn);CS1591</NoWarn>
+  </PropertyGroup>
+
+  <!-- NuGet identity — this package is a satellite adapter: it depends on both
+       the Reactor preview14 NuGet package and H.NotifyIcon.WinUI. -->
+  <PropertyGroup>
+    <PackageId>Kumo.H.NotifyIcon.Reactor</PackageId>
+    <Version>0.1.0-preview.1</Version>
+    <Authors>Kumo</Authors>
+    <Description>H.NotifyIcon-backed implementation of the Microsoft.UI.Reactor v0.1.0-preview.15 system-tray API, compiled against Microsoft.UI.Reactor v0.1.0-preview.14.</Description>
+    <PackageTags>WinUI;Reactor;NotifyIcon;TrayIcon;H.NotifyIcon;SystemTray</PackageTags>
+    <IsPackable>true</IsPackable>
+    <EnablePackageValidation>false</EnablePackageValidation>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.UI.Reactor" Version="0.1.0-preview.14" />
+    <PackageReference Include="H.NotifyIcon.WinUI" Version="2.5.0-dev.2" />
+    <PackageReference Include="System.Drawing.Common" Version="10.0.11" />
+  </ItemGroup>
+
+</Project>
