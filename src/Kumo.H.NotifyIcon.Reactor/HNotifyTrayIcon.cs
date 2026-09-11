@@ -103,7 +103,7 @@ public sealed partial class HNotifyTrayIcon : IDisposable
             if (_disposed || string.Equals(_spec.Tooltip, value, StringComparison.Ordinal)) return;
 
             _spec = _spec with { Tooltip = value };
-            if (_taskbarIcon is not null) _taskbarIcon.ToolTipText = value;
+            _taskbarIcon?.ToolTipText = value;
         }
     }
 
@@ -325,7 +325,7 @@ public sealed partial class HNotifyTrayIcon : IDisposable
     {
         ArgumentNullException.ThrowIfNull(next);
         HNotifyThreading.ThrowIfNotOnUiThread(nameof(Update));
-        if (_disposed) throw new ObjectDisposedException(nameof(HNotifyTrayIcon));
+        ObjectDisposedException.ThrowIf(_disposed, this);
 
         var prev = _spec;
         _spec = next;
@@ -348,7 +348,7 @@ public sealed partial class HNotifyTrayIcon : IDisposable
 
         if (!string.Equals(prev.Tooltip, next.Tooltip, StringComparison.Ordinal))
         {
-            if (_taskbarIcon is not null) _taskbarIcon.ToolTipText = next.Tooltip ?? string.Empty;
+            _taskbarIcon?.ToolTipText = next.Tooltip ?? string.Empty;
         }
 
         if (prev.IsVisible != next.IsVisible)

@@ -196,15 +196,11 @@ sealed class TrayHostComponent : HNotifyComponent
 /// The main window's content. Knows nothing about tray internals — it only
 /// calls the orchestrator's unit-level operations.
 /// </summary>
-sealed class MainPanel : Component
+sealed class MainPanel(AppHost host) : Component
 {
-    private readonly AppHost _host;
-
-    public MainPanel(AppHost host) => _host = host;
-
     public override Element Render()
     {
-        var (trayOn, setTrayOn) = UseState(_host.TrayActive);
+        var (trayOn, setTrayOn) = UseState(host.TrayActive);
 
         return Border(
             VStack(18,
@@ -217,17 +213,17 @@ sealed class MainPanel : Component
                     trayOn,
                     on =>
                     {
-                        if (on) _host.EnableTray(); else _host.DisableTray();
+                        if (on) host.EnableTray(); else host.DisableTray();
                         setTrayOn(on);
                     },
                     header: "托盘单元",
                     onContent: "启用",
                     offContent: "停用"),
 
-                Button("销毁主窗口（托盘不受影响）", _host.CloseMainWindow),
+                Button("销毁主窗口（托盘不受影响）", host.CloseMainWindow),
                 TextBlock("重新打开主窗口：右键托盘图标 → 打开主窗口。"),
 
-                TextBlock($"主窗口创建次数：{_host.MainWindowCreations}    托盘单元创建次数：{_host.TrayUnitCreations}"))
+                TextBlock($"主窗口创建次数：{host.MainWindowCreations}    托盘单元创建次数：{host.TrayUnitCreations}"))
             .Padding(24));
     }
 }

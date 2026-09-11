@@ -11,6 +11,11 @@
     <!-- Unpackaged self-contained + Native AOT: `dotnet publish -c Release
          -p:Platform=ARM64` produces the AOT win-arm64 exe. -->
     <PublishAot>true</PublishAot>
+    <!-- Route publish through the MSIX tooling path: unlike the plain unpackaged
+         path it deploys the app's own .pri/.xbf into the publish output, fixing
+         the NativeAOT resource loss of WindowsAppSDK #6394 — no custom
+         post-Publish copy target needed. -->
+    <EnableMsixTooling>true</EnableMsixTooling>
   </PropertyGroup>
 
   <!-- WindowsAppSDKSelfContained needs a concrete Windows architecture even when
@@ -30,22 +35,5 @@
     <ProjectReference Include="..\..\src\Kumo.H.NotifyIcon.Reactor\Kumo.H.NotifyIcon.Reactor.csproj" />
     <PackageReference Include="Microsoft.UI.Reactor" Version="0.1.0-preview.14" />
   </ItemGroup>
-
-  <!-- WindowsAppSDK #6394 (open against 1.8/2.0): the NativeAOT publish pipeline
-       does not copy an unpackaged app's own $(AssemblyName).pri (nor .xbf files)
-       into the publish directory — MRT/XAML resource lookups then fail at
-       runtime with stowed exceptions in Microsoft.UI.Xaml.dll. Workaround copied
-       from microsoft-ui-reactor's Reactor.AppTests.Host.csproj (commit 458f30b);
-       remove once the upstream issue is fixed. -->
-  <Target Name="CopyXamlResourcesForAot" AfterTargets="Publish"
-          Condition="'$(PublishAot)' == 'true'">
-    <ItemGroup>
-      <_XamlResources Include="$(OutputPath)**\*.xbf" />
-      <_XamlResources Include="$(OutputPath)$(AssemblyName).pri" />
-    </ItemGroup>
-    <Copy SourceFiles="@(_XamlResources)"
-          DestinationFiles="@(_XamlResources->'$(PublishDir)%(RecursiveDir)%(Filename)%(Extension)')"
-          SkipUnchangedFiles="true" />
-  </Target>
 
 </Project>

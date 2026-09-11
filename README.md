@@ -204,8 +204,8 @@ dotnet build .\samples\HNotifyTrayIcon.Sample\HNotifyTrayIcon.Sample.csproj -p:P
 # 组件方式示例（独立单元 + PopupMenu 原生菜单）
 dotnet build .\samples\HNotifyTrayIcon.ComponentSample\HNotifyTrayIcon.ComponentSample.csproj -p:Platform=ARM64
 
-# 第二个 sample 的 ARM64 Native AOT 发布（csproj 里预置了 WinAppSDK #6394 的
-# .pri/.xbf 复制 workaround；AOT 运行与自动退出已验证正常）
+# 第二个 sample 的 ARM64 Native AOT 发布（EnableMsixTooling 走 MSIX 工具链，
+# 规避 WinAppSDK #6394 的 .pri 丢失问题；AOT 运行与自动退出已验证正常）
 dotnet publish .\samples\HNotifyTrayIcon.ComponentSample\HNotifyTrayIcon.ComponentSample.csproj -c Release -p:Platform=ARM64
 
 # 打包

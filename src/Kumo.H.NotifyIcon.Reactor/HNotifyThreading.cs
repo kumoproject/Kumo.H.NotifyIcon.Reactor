@@ -16,15 +16,10 @@ internal static class HNotifyThreading
     /// </summary>
     public static void ThrowIfNotOnUiThread(string memberName)
     {
-        var dispatcher = ReactorApp.UIDispatcher;
-        if (dispatcher is null)
-        {
-            throw new InvalidOperationException(
+        var dispatcher = ReactorApp.UIDispatcher ?? throw new InvalidOperationException(
                 $"{memberName} must be called on the Reactor UI thread. " +
                 "Open tray icons from the ReactorApp.Run startup callback (or any UI-thread code " +
                 "that runs after it) so ReactorApp.UIDispatcher has been captured.");
-        }
-
         if (!dispatcher.HasThreadAccess)
         {
             throw new InvalidOperationException(
