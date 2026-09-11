@@ -1,4 +1,4 @@
 <Solution>
   <Project Path="src/Kumo.H.NotifyIcon.Reactor/Kumo.H.NotifyIcon.Reactor.csproj" />
-  <Project Path="samples/KumoTrayIcon.Sample/KumoTrayIcon.Sample.csproj" />
+  <Project Path="samples/HNotifyTrayIcon.Sample/HNotifyTrayIcon.Sample.csproj" />
 </Solution>

@@ -8,17 +8,17 @@ namespace Kumo.H.NotifyIcon.Reactor;
 /// H.NotifyIcon-backed mirror of Reactor v0.1.0-preview.15's
 /// <c>RenderContext.UseTrayIcon(TrayIconSpec)</c> hook.
 /// </summary>
-public static class KumoRenderContextExtensions
+public static class HNotifyRenderContextExtensions
 {
     /// <summary>Stable non-null effect dependency used when the icon failed to open.</summary>
     private static readonly object NoTrayIconSentinel = new();
 
     /// <summary>
-    /// Open (or reuse-by-<see cref="KumoTrayIconSpec.Key"/>) a system-tray icon
+    /// Open (or reuse-by-<see cref="HNotifyTrayIconSpec.Key"/>) a system-tray icon
     /// scoped to the calling render context. The icon closes automatically on
     /// unmount — that is the only difference from
-    /// <see cref="KumoApp.OpenTrayIcon"/>, which is app-scoped and keeps the
-    /// icon alive until an explicit <see cref="KumoTrayIcon.Close"/>.
+    /// <see cref="HNotifyApp.OpenTrayIcon"/>, which is app-scoped and keeps the
+    /// icon alive until an explicit <see cref="HNotifyTrayIcon.Close"/>.
     /// </summary>
     /// <remarks>
     /// Returns <c>null</c> when no UI dispatcher has been captured (test
@@ -26,12 +26,12 @@ public static class KumoRenderContextExtensions
     /// before subscribing to events. Identity-stable across re-renders so the
     /// same handle wires through subsequent effects.
     /// </remarks>
-    public static KumoTrayIcon? UseTrayIcon(this RenderContext context, KumoTrayIconSpec spec)
+    public static HNotifyTrayIcon? UseTrayIcon(this RenderContext context, HNotifyTrayIconSpec spec)
     {
         ArgumentNullException.ThrowIfNull(context);
         ArgumentNullException.ThrowIfNull(spec);
 
-        var handleRef = context.UseRef<KumoTrayIcon?>(null);
+        var handleRef = context.UseRef<HNotifyTrayIcon?>(null);
 
         // Open on first render; reuse on subsequent renders if a key match
         // already exists. The hook owns the lifetime — the cleanup effect below
@@ -40,14 +40,14 @@ public static class KumoRenderContextExtensions
         {
             if (spec.Key is { } key)
             {
-                handleRef.Current = KumoApp.FindTrayIcon(key);
+                handleRef.Current = HNotifyApp.FindTrayIcon(key);
             }
 
             if (handleRef.Current is null && ReactorApp.UIDispatcher is not null)
             {
                 try
                 {
-                    handleRef.Current = KumoApp.OpenTrayIcon(spec);
+                    handleRef.Current = HNotifyApp.OpenTrayIcon(spec);
                 }
                 catch (Exception ex) when (ex is InvalidOperationException or COMException)
                 {

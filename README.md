@@ -19,7 +19,7 @@ Reactor 的原生 tray 是自研的 Win32 `Shell_NotifyIcon` 实现（隐藏窗�
 
 - 图标注册/隐藏/更新、Explorer 重启后的自动恢复、多图标 Id 管理交给 H.NotifyIcon；
 - flyout 内容仍由 Reactor 自己的 `ReactorHost` 渲染；
-- 调用方代码与 preview15 完全同形，将来要迁回原生 API（或反向迁移）只需要替换 `KumoApp` → `ReactorApp`、`KumoTrayIconSpec` → `TrayIconSpec`。
+- 调用方代码与 preview15 完全同形，将来要迁回原生 API（或反向迁移）只需要替换 `HNotifyApp` → `ReactorApp`、`HNotifyTrayIconSpec` → `TrayIconSpec`。
 
 ## 快速开始
 
@@ -32,7 +32,7 @@ ReactorApp.ShutdownPolicy = ShutdownPolicy.Explicit; // 纯托盘/托盘常驻�
 
 ReactorApp.Run(_ =>
 {
-    var tray = KumoApp.OpenTrayIcon(new KumoTrayIconSpec(
+    var tray = HNotifyApp.OpenTrayIcon(new HNotifyTrayIconSpec(
         WindowIcon.FromPath(Path.Combine(AppContext.BaseDirectory, "app.ico")),
         "My App",
         WindowKey.Of("main-tray")));
@@ -50,12 +50,12 @@ ReactorApp.Run(_ =>
 组件的用法（对应 preview15 的 `Component.UseTrayIcon` / `RenderContext.UseTrayIcon`）：
 
 ```csharp
-// 类组件：从 KumoComponent 派生即可获得 protected UseTrayIcon
-sealed class TrayHost : KumoComponent
+// 类组件：从 HNotifyComponent 派生即可获得 protected UseTrayIcon
+sealed class TrayHost : HNotifyComponent
 {
     public override Element Render()
     {
-        var tray = UseTrayIcon(new KumoTrayIconSpec(
+        var tray = UseTrayIcon(new HNotifyTrayIconSpec(
             WindowIcon.FromPath(iconPath), "Component Tray", WindowKey.Of("component-tray")));
 
         UseEffect(() =>
@@ -73,7 +73,7 @@ sealed class TrayHost : KumoComponent
 // 函数组件：RenderContext 扩展方法（调用写法与 preview15 的实例方法一致）
 Element View(RenderContext context)
 {
-    var tray = context.UseTrayIcon(new KumoTrayIconSpec(
+    var tray = context.UseTrayIcon(new HNotifyTrayIconSpec(
         WindowIcon.FromPath(iconPath), "Function Tray", WindowKey.Of("function-tray")));
 
     context.UseEffect(() =>
@@ -95,23 +95,23 @@ Element View(RenderContext context)
 
 | Reactor preview15 | Kumo.H.NotifyIcon.Reactor | 备注 |
 | --- | --- | --- |
-| `TrayIconSpec(Icon, Tooltip, Key, IsVisible)` | `KumoTrayIconSpec(Icon, Tooltip, Key, IsVisible)` | 位置参数与默认值一致；额外提供 `System.Drawing.Icon` 构造与 `FromDrawingIcon` 工厂 |
-| `ReactorApp.OpenTrayIcon(spec)` | `KumoApp.OpenTrayIcon(spec)` | 同样的 UI 线程校验、同样的失败回滚（注销 + dispose + 重抛） |
-| `ReactorApp.TrayIcons` | `KumoApp.TrayIcons` | copy-on-write 快照，任意线程可读 |
-| `ReactorApp.FindTrayIcon(key)` | `KumoApp.FindTrayIcon(key)` | |
-| `ReactorApp.TrayIconOpened/Closed` | `KumoApp.TrayIconOpened/Closed` | 事件参数为 `KumoTrayIcon` |
-| `ReactorTrayIcon.Id/Key/Spec/Icon/Tooltip/IsVisible` | `KumoTrayIcon` 同名成员 | `Icon` 为 `WindowIcon?`，另有 `DrawingIcon` |
-| `ReactorTrayIcon.Update(spec)` | `KumoTrayIcon.Update(spec)` | 只重放发生变化的字段；`Update` 在已释放时抛 `ObjectDisposedException` |
+| `TrayIconSpec(Icon, Tooltip, Key, IsVisible)` | `HNotifyTrayIconSpec(Icon, Tooltip, Key, IsVisible)` | 位置参数与默认值一致；额外提供 `System.Drawing.Icon` 构造与 `FromDrawingIcon` 工厂 |
+| `ReactorApp.OpenTrayIcon(spec)` | `HNotifyApp.OpenTrayIcon(spec)` | 同样的 UI 线程校验、同样的失败回滚（注销 + dispose + 重抛） |
+| `ReactorApp.TrayIcons` | `HNotifyApp.TrayIcons` | copy-on-write 快照，任意线程可读 |
+| `ReactorApp.FindTrayIcon(key)` | `HNotifyApp.FindTrayIcon(key)` | |
+| `ReactorApp.TrayIconOpened/Closed` | `HNotifyApp.TrayIconOpened/Closed` | 事件参数为 `HNotifyTrayIcon` |
+| `ReactorTrayIcon.Id/Key/Spec/Icon/Tooltip/IsVisible` | `HNotifyTrayIcon` 同名成员 | `Icon` 为 `WindowIcon?`，另有 `DrawingIcon` |
+| `ReactorTrayIcon.Update(spec)` | `HNotifyTrayIcon.Update(spec)` | 只重放发生变化的字段；`Update` 在已释放时抛 `ObjectDisposedException` |
 | `Click / DoubleClick / RightClick` | 同名事件 | 见下方“点击语义” |
 | `ShowFlyout(Element) / HideFlyout()` | 同名方法 | 进程内单飞窗，内容尺寸自适应 |
 | `Close()` / `Dispose()` | 同名 | 幂等 |
-| `Component.UseTrayIcon(spec)` | `KumoComponent.UseTrayIcon(spec)`（protected） | 见“组件模式” |
-| `RenderContext.UseTrayIcon(spec)` | `KumoRenderContextExtensions.UseTrayIcon(context, spec)` | 扩展方法，调用写法一致 |
+| `Component.UseTrayIcon(spec)` | `HNotifyComponent.UseTrayIcon(spec)`（protected） | 见“组件模式” |
+| `RenderContext.UseTrayIcon(spec)` | `HNotifyRenderContextExtensions.UseTrayIcon(context, spec)` | 扩展方法，调用写法一致 |
 
 ## 与 preview15 原生托盘实现的差异（务必阅读）
 
 1. **内存图标**：preview15 新增 `WindowIcon.FromBytes` / `FromRgba`，preview14 没有这些 API。本库用
-   `KumoTrayIconSpec.FromDrawingIcon(icon, tooltip, key, isVisible)`（或 `System.Drawing.Icon` 构造）覆盖这个场景，
+   `HNotifyTrayIconSpec.FromDrawingIcon(icon, tooltip, key, isVisible)`（或 `System.Drawing.Icon` 构造）覆盖这个场景，
    icon 由调用方持有、库内部克隆后交给 H.NotifyIcon 管理。
 2. **资源图标**：`WindowIcon.FromResource("ms-appx:///...")` 会尽力解析为磁盘文件（未打包应用查
    `AppContext.BaseDirectory`，打包应用查 `Package.Current.InstalledLocation`），解析失败则跳过图标加载并写
@@ -139,7 +139,7 @@ dotnet build .\Kumo.H.NotifyIcon.Reactor.slnx
 dotnet build .\src\Kumo.H.NotifyIcon.Reactor\Kumo.H.NotifyIcon.Reactor.csproj
 
 # 单独构建示例（也可以显式指定平台）
-dotnet build .\samples\KumoTrayIcon.Sample\KumoTrayIcon.Sample.csproj -p:Platform=ARM64
+dotnet build .\samples\HNotifyTrayIcon.Sample\HNotifyTrayIcon.Sample.csproj -p:Platform=ARM64
 
 # 打包
 dotnet pack .\src\Kumo.H.NotifyIcon.Reactor\Kumo.H.NotifyIcon.Reactor.csproj -c Release
@@ -151,13 +151,13 @@ dotnet pack .\src\Kumo.H.NotifyIcon.Reactor\Kumo.H.NotifyIcon.Reactor.csproj -c 
 Kumo.H.NotifyIcon.Reactor/
 ├─ Kumo.H.NotifyIcon.Reactor.slnx
 ├─ src/Kumo.H.NotifyIcon.Reactor/
-│  ├─ KumoTrayIconSpec.cs          # 对齐 preview15 TrayIconSpec
-│  ├─ KumoTrayIcon.cs              # 对齐 preview15 ReactorTrayIcon（H.NotifyIcon 后端）
-│  ├─ KumoApp.cs                   # 对齐 ReactorApp 的托盘注册表
-│  ├─ KumoComponent.cs             # 对齐 Component.UseTrayIcon
-│  ├─ KumoRenderContextExtensions.cs
-│  ├─ KumoFlyoutHostWindow.cs      # ReactorHost 渲染的 flyout 宿主窗口
-│  ├─ KumoIconResolver.cs          # WindowIcon / System.Drawing.Icon → HICON
-│  └─ KumoThreading.cs             # UI 线程校验
-└─ samples/KumoTrayIcon.Sample/    # preview15 同形调用示例
+│  ├─ HNotifyTrayIconSpec.cs          # 对齐 preview15 TrayIconSpec
+│  ├─ HNotifyTrayIcon.cs              # 对齐 preview15 ReactorTrayIcon（H.NotifyIcon 后端）
+│  ├─ HNotifyApp.cs                   # 对齐 ReactorApp 的托盘注册表
+│  ├─ HNotifyComponent.cs             # 对齐 Component.UseTrayIcon
+│  ├─ HNotifyRenderContextExtensions.cs
+│  ├─ HNotifyFlyoutHostWindow.cs      # ReactorHost 渲染的 flyout 宿主窗口
+│  ├─ HNotifyIconResolver.cs          # WindowIcon / System.Drawing.Icon → HICON
+│  └─ HNotifyThreading.cs             # UI 线程校验
+└─ samples/HNotifyTrayIcon.Sample/    # preview15 同形调用示例
 ```

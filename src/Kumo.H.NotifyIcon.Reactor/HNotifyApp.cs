@@ -4,7 +4,7 @@ using Microsoft.UI.Reactor;
 namespace Kumo.H.NotifyIcon.Reactor;
 
 /// <summary>
-/// Application-level registry for <see cref="KumoTrayIcon"/> handles — the
+/// Application-level registry for <see cref="HNotifyTrayIcon"/> handles — the
 /// H.NotifyIcon-backed peer of Reactor v0.1.0-preview.15's
 /// <c>ReactorApp</c> tray surface (<c>OpenTrayIcon</c> / <c>FindTrayIcon</c> /
 /// <c>TrayIcons</c> / <c>TrayIconOpened</c> / <c>TrayIconClosed</c>).
@@ -19,33 +19,33 @@ namespace Kumo.H.NotifyIcon.Reactor;
 /// <see cref="ReactorApp.Exit"/>.
 /// </para>
 /// </remarks>
-public static class KumoApp
+public static class HNotifyApp
 {
-    private static KumoTrayIcon[] _trayIcons = global::System.Array.Empty<KumoTrayIcon>();
+    private static HNotifyTrayIcon[] _trayIcons = global::System.Array.Empty<HNotifyTrayIcon>();
 
     /// <summary>
-    /// Snapshot of every open <see cref="KumoTrayIcon"/>. Copy-on-write;
+    /// Snapshot of every open <see cref="HNotifyTrayIcon"/>. Copy-on-write;
     /// safe to read from any thread.
     /// </summary>
-    public static IReadOnlyList<KumoTrayIcon> TrayIcons => Volatile.Read(ref _trayIcons);
+    public static IReadOnlyList<HNotifyTrayIcon> TrayIcons => Volatile.Read(ref _trayIcons);
 
-    /// <summary>Fires on the UI thread when a <see cref="KumoTrayIcon"/> opens.</summary>
-    public static event EventHandler<KumoTrayIcon>? TrayIconOpened;
+    /// <summary>Fires on the UI thread when a <see cref="HNotifyTrayIcon"/> opens.</summary>
+    public static event EventHandler<HNotifyTrayIcon>? TrayIconOpened;
 
-    /// <summary>Fires on the UI thread when a <see cref="KumoTrayIcon"/> closes.</summary>
-    public static event EventHandler<KumoTrayIcon>? TrayIconClosed;
+    /// <summary>Fires on the UI thread when a <see cref="HNotifyTrayIcon"/> closes.</summary>
+    public static event EventHandler<HNotifyTrayIcon>? TrayIconClosed;
 
     /// <summary>
     /// Open a system-tray icon. UI-thread only. The returned handle stays alive
-    /// until <see cref="KumoTrayIcon.Close"/> / <see cref="KumoTrayIcon.Dispose"/>
+    /// until <see cref="HNotifyTrayIcon.Close"/> / <see cref="HNotifyTrayIcon.Dispose"/>
     /// is called or the process exits.
     /// </summary>
-    public static KumoTrayIcon OpenTrayIcon(KumoTrayIconSpec spec)
+    public static HNotifyTrayIcon OpenTrayIcon(HNotifyTrayIconSpec spec)
     {
         ArgumentNullException.ThrowIfNull(spec);
-        KumoThreading.ThrowIfNotOnUiThread(nameof(OpenTrayIcon));
+        HNotifyThreading.ThrowIfNotOnUiThread(nameof(OpenTrayIcon));
 
-        var icon = new KumoTrayIcon(spec);
+        var icon = new HNotifyTrayIcon(spec);
         RegisterTrayIcon(icon);
         try
         {
@@ -62,7 +62,7 @@ public static class KumoApp
     }
 
     /// <summary>Look up an open tray icon by <see cref="WindowKey"/>.</summary>
-    public static KumoTrayIcon? FindTrayIcon(WindowKey key)
+    public static HNotifyTrayIcon? FindTrayIcon(WindowKey key)
     {
         var snapshot = TrayIcons;
         for (var i = 0; i < snapshot.Count; i++)
@@ -75,19 +75,19 @@ public static class KumoApp
     }
 
     // Copy-on-write add. UI-thread only — reads can happen anywhere.
-    internal static void RegisterTrayIcon(KumoTrayIcon icon)
+    internal static void RegisterTrayIcon(HNotifyTrayIcon icon)
     {
         var current = Volatile.Read(ref _trayIcons);
-        var next = new KumoTrayIcon[current.Length + 1];
+        var next = new HNotifyTrayIcon[current.Length + 1];
         global::System.Array.Copy(current, next, current.Length);
         next[current.Length] = icon;
         Volatile.Write(ref _trayIcons, next);
 
         try { TrayIconOpened?.Invoke(null, icon); }
-        catch (Exception ex) { Debug.WriteLine($"[Kumo] TrayIconOpened threw: {ex.Message}"); }
+        catch (Exception ex) { Debug.WriteLine($"[HNotify] TrayIconOpened threw: {ex.Message}"); }
     }
 
-    internal static void UnregisterTrayIcon(KumoTrayIcon icon)
+    internal static void UnregisterTrayIcon(HNotifyTrayIcon icon)
     {
         var current = Volatile.Read(ref _trayIcons);
         var index = global::System.Array.IndexOf(current, icon);
@@ -97,13 +97,13 @@ public static class KumoApp
             return;
         }
 
-        var next = new KumoTrayIcon[current.Length - 1];
+        var next = new HNotifyTrayIcon[current.Length - 1];
         if (index > 0) global::System.Array.Copy(current, 0, next, 0, index);
         if (index < current.Length - 1)
             global::System.Array.Copy(current, index + 1, next, index, current.Length - index - 1);
         Volatile.Write(ref _trayIcons, next);
 
         try { TrayIconClosed?.Invoke(null, icon); }
-        catch (Exception ex) { Debug.WriteLine($"[Kumo] TrayIconClosed threw: {ex.Message}"); }
+        catch (Exception ex) { Debug.WriteLine($"[HNotify] TrayIconClosed threw: {ex.Message}"); }
     }
 }

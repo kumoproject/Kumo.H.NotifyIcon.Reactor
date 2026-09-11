@@ -20,7 +20,7 @@ namespace Kumo.H.NotifyIcon.Reactor;
 /// <para>
 /// Mirrors Reactor preview15's internal <c>TrayFlyoutHostWindow</c>: one
 /// instance per process, lazily created on the first
-/// <see cref="KumoTrayIcon.ShowFlyout"/> call, reused by every tray icon, with a
+/// <see cref="HNotifyTrayIcon.ShowFlyout"/> call, reused by every tray icon, with a
 /// fresh <see cref="ReactorHost"/> per show so flyout components get a fresh
 /// hook state on every invocation.
 /// </para>
@@ -30,7 +30,7 @@ namespace Kumo.H.NotifyIcon.Reactor;
 /// under the cursor.
 /// </para>
 /// </remarks>
-internal sealed class KumoFlyoutHostWindow : IDisposable
+internal sealed class HNotifyFlyoutHostWindow : IDisposable
 {
     private const int FallbackWidthDip = 280;
     private const int FallbackHeightDip = 360;
@@ -39,7 +39,7 @@ internal sealed class KumoFlyoutHostWindow : IDisposable
     private const uint MonitorDefaultToNearest = 2;
     private const uint MdtEffectiveDpi = 0;
 
-    private static KumoFlyoutHostWindow? s_instance;
+    private static HNotifyFlyoutHostWindow? s_instance;
     private static readonly object s_lock = new();
 
     private readonly Window _window;
@@ -51,7 +51,7 @@ internal sealed class KumoFlyoutHostWindow : IDisposable
     private bool _windowClosed;
 
     /// <summary>Acquire the per-process host, creating it on first call. UI-thread only.</summary>
-    public static KumoFlyoutHostWindow GetOrCreate()
+    public static HNotifyFlyoutHostWindow GetOrCreate()
     {
         var existing = Volatile.Read(ref s_instance);
         if (existing is not null) return existing;
@@ -60,7 +60,7 @@ internal sealed class KumoFlyoutHostWindow : IDisposable
         {
             if (s_instance is not null) return s_instance;
 
-            var instance = new KumoFlyoutHostWindow();
+            var instance = new HNotifyFlyoutHostWindow();
             Volatile.Write(ref s_instance, instance);
             return instance;
         }
@@ -69,13 +69,13 @@ internal sealed class KumoFlyoutHostWindow : IDisposable
     /// <summary>Dismiss the currently visible flyout, if any. UI-thread only. Idempotent.</summary>
     public static void HideIfShown() => Volatile.Read(ref s_instance)?.Hide();
 
-    private KumoFlyoutHostWindow()
+    private HNotifyFlyoutHostWindow()
     {
-        _window = new Window { Title = "KumoTrayFlyout" };
+        _window = new Window { Title = "HNotifyTrayFlyout" };
         _appWindow = _window.AppWindow;
 
         try { _appWindow.IsShownInSwitchers = false; }
-        catch (Exception ex) { Debug.WriteLine($"[Kumo] Tray flyout IsShownInSwitchers failed: {ex.Message}"); }
+        catch (Exception ex) { Debug.WriteLine($"[HNotify] Tray flyout IsShownInSwitchers failed: {ex.Message}"); }
 
         try
         {
@@ -89,7 +89,7 @@ internal sealed class KumoFlyoutHostWindow : IDisposable
                 presenter.IsAlwaysOnTop = true;
             }
         }
-        catch (Exception ex) { Debug.WriteLine($"[Kumo] Tray flyout presenter setup failed: {ex.Message}"); }
+        catch (Exception ex) { Debug.WriteLine($"[HNotify] Tray flyout presenter setup failed: {ex.Message}"); }
 
         _window.Activated += OnActivated;
 
@@ -122,7 +122,7 @@ internal sealed class KumoFlyoutHostWindow : IDisposable
         if (args.WindowActivationState == WindowActivationState.Deactivated && _isShowing)
         {
             try { Hide(); }
-            catch (Exception ex) { Debug.WriteLine($"[Kumo] Tray flyout hide failed: {ex.GetType().Name}: {ex.Message}"); }
+            catch (Exception ex) { Debug.WriteLine($"[HNotify] Tray flyout hide failed: {ex.GetType().Name}: {ex.Message}"); }
         }
     }
 
@@ -159,7 +159,7 @@ internal sealed class KumoFlyoutHostWindow : IDisposable
         if (!_windowClosed)
         {
             try { _appWindow.Hide(); }
-            catch (Exception ex) { Debug.WriteLine($"[Kumo] Tray flyout Hide failed: {ex.GetType().Name}: {ex.Message}"); }
+            catch (Exception ex) { Debug.WriteLine($"[HNotify] Tray flyout Hide failed: {ex.GetType().Name}: {ex.Message}"); }
         }
 
         // Dispose the per-show host so its hook-state cleanups run promptly; the
@@ -197,7 +197,7 @@ internal sealed class KumoFlyoutHostWindow : IDisposable
         }
         catch (Exception ex)
         {
-            Debug.WriteLine($"[Kumo] Tray flyout layout failed: {ex.GetType().Name}: {ex.Message}");
+            Debug.WriteLine($"[HNotify] Tray flyout layout failed: {ex.GetType().Name}: {ex.Message}");
         }
     }
 
@@ -224,7 +224,7 @@ internal sealed class KumoFlyoutHostWindow : IDisposable
         accelerator.Invoked += (_, args) =>
         {
             try { Hide(); }
-            catch (Exception ex) { Debug.WriteLine($"[Kumo] Tray flyout escape-hide failed: {ex.Message}"); }
+            catch (Exception ex) { Debug.WriteLine($"[HNotify] Tray flyout escape-hide failed: {ex.Message}"); }
             args.Handled = true;
         };
         root.KeyboardAccelerators.Add(accelerator);
@@ -242,7 +242,7 @@ internal sealed class KumoFlyoutHostWindow : IDisposable
             _escapeAccelerator = null;
         }
 
-        try { _host?.Dispose(); } catch (Exception ex) { Debug.WriteLine($"[Kumo] Tray flyout host dispose failed: {ex.GetType().Name}: {ex.Message}"); }
+        try { _host?.Dispose(); } catch (Exception ex) { Debug.WriteLine($"[HNotify] Tray flyout host dispose failed: {ex.GetType().Name}: {ex.Message}"); }
         _host = null;
     }
 

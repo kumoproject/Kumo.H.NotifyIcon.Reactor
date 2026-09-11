@@ -14,15 +14,15 @@ namespace Kumo.H.NotifyIcon.Reactor;
 /// Reactor's own protected <c>Component.UseTrayIcon</c> cannot be extended from
 /// another assembly, so this library provides the same shape as a base class.
 /// Function components can use
-/// <see cref="KumoRenderContextExtensions.UseTrayIcon"/> on their
+/// <see cref="HNotifyRenderContextExtensions.UseTrayIcon"/> on their
 /// <see cref="RenderContext"/> instead.
 /// </para>
 /// <code>
-/// sealed class MyComponent : KumoComponent
+/// sealed class MyComponent : HNotifyComponent
 /// {
 ///     public override Element Render()
 ///     {
-///         var tray = UseTrayIcon(new KumoTrayIconSpec(
+///         var tray = UseTrayIcon(new HNotifyTrayIconSpec(
 ///             WindowIcon.FromPath(iconPath), "My App", WindowKey.Of("my-tray")));
 ///
 ///         UseEffect(() =&gt;
@@ -38,37 +38,37 @@ namespace Kumo.H.NotifyIcon.Reactor;
 /// }
 /// </code>
 /// </remarks>
-public abstract class KumoComponent : Component
+public abstract class HNotifyComponent : Component
 {
     /// <summary>Stable non-null effect dependency used when the icon failed to open.</summary>
     private static readonly object NoTrayIconSentinel = new();
 
     /// <summary>
-    /// Open (or reuse-by-<see cref="KumoTrayIconSpec.Key"/>) a system-tray icon
+    /// Open (or reuse-by-<see cref="HNotifyTrayIconSpec.Key"/>) a system-tray icon
     /// scoped to this component; the icon closes on unmount.
     /// </summary>
     /// <remarks>
     /// Returns <c>null</c> when no UI dispatcher has been captured or the icon
     /// cannot be created — null-check before subscribing to events.
     /// </remarks>
-    protected KumoTrayIcon? UseTrayIcon(KumoTrayIconSpec spec)
+    protected HNotifyTrayIcon? UseTrayIcon(HNotifyTrayIconSpec spec)
     {
         ArgumentNullException.ThrowIfNull(spec);
 
-        var handleRef = UseRef<KumoTrayIcon?>(null);
+        var handleRef = UseRef<HNotifyTrayIcon?>(null);
 
         if (handleRef.Current is null)
         {
             if (spec.Key is { } key)
             {
-                handleRef.Current = KumoApp.FindTrayIcon(key);
+                handleRef.Current = HNotifyApp.FindTrayIcon(key);
             }
 
             if (handleRef.Current is null && ReactorApp.UIDispatcher is not null)
             {
                 try
                 {
-                    handleRef.Current = KumoApp.OpenTrayIcon(spec);
+                    handleRef.Current = HNotifyApp.OpenTrayIcon(spec);
                 }
                 catch (Exception ex) when (ex is InvalidOperationException or COMException)
                 {

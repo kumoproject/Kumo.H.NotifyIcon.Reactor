@@ -4,7 +4,7 @@ using Microsoft.UI.Reactor;
 namespace Kumo.H.NotifyIcon.Reactor;
 
 /// <summary>
-/// Translates a <see cref="KumoTrayIconSpec"/> icon source into the
+/// Translates a <see cref="HNotifyTrayIconSpec"/> icon source into the
 /// <see cref="System.Drawing.Icon"/> instance H.NotifyIcon actually consumes.
 /// </summary>
 /// <remarks>
@@ -12,7 +12,7 @@ namespace Kumo.H.NotifyIcon.Reactor;
 /// resource (<c>ms-appx:///</c>) icons are resolved to a file when one exists
 /// and otherwise skipped with a debug diagnostic rather than crashing the icon.
 /// </remarks>
-internal static class KumoIconResolver
+internal static class HNotifyIconResolver
 {
     private const string MsAppxPrefix = "ms-appx:///";
 
@@ -20,7 +20,7 @@ internal static class KumoIconResolver
     /// Resolves (and clones) the icon to hand to the shell, or <c>null</c> when
     /// the source produced none. The caller owns the returned instance.
     /// </summary>
-    public static System.Drawing.Icon? Resolve(KumoTrayIconSpec spec)
+    public static System.Drawing.Icon? Resolve(HNotifyTrayIconSpec spec)
     {
         try
         {
@@ -38,9 +38,9 @@ internal static class KumoIconResolver
             if (path is null || !File.Exists(path))
             {
                 Debug.WriteLine(
-                    "[Kumo] Tray icon: no file found for icon source " +
+                    "[HNotify] Tray icon: no file found for icon source " +
                     $"'{windowIcon.Source}'. Ship a sidecar .ico next to the app, or pass a " +
-                    "System.Drawing.Icon (KumoTrayIconSpec.FromDrawingIcon).");
+                    "System.Drawing.Icon (HNotifyTrayIconSpec.FromDrawingIcon).");
                 return null;
             }
 
@@ -48,7 +48,7 @@ internal static class KumoIconResolver
         }
         catch (Exception ex)
         {
-            Debug.WriteLine($"[Kumo] Tray icon load failed: {ex.GetType().Name}: {ex.Message}");
+            Debug.WriteLine($"[HNotify] Tray icon load failed: {ex.GetType().Name}: {ex.Message}");
             return null;
         }
     }

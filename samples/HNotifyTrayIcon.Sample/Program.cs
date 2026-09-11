@@ -4,7 +4,7 @@ using Microsoft.UI.Reactor.Core;
 using static Microsoft.UI.Reactor.Factories;
 
 // The call sites below are written exactly like Reactor preview15's tray API;
-// the only difference is KumoApp/KumoTrayIcon instead of ReactorApp/ReactorTrayIcon,
+// the only difference is HNotifyApp/HNotifyTrayIcon instead of ReactorApp/ReactorTrayIcon,
 // and the tray is backed by H.NotifyIcon (no native Shell_NotifyIcon code inside
 // this app, no flyout host window of Reactor's own).
 
@@ -29,7 +29,7 @@ ReactorApp.Run(_ =>
         var opened = ReactorApp.OpenWindow(
             new WindowSpec
             {
-                Title = "Kumo Tray Icon (H.NotifyIcon)",
+                Title = "HNotify Tray Icon (H.NotifyIcon)",
                 Width = 640,
                 Height = 420,
                 StartPosition = WindowStartPosition.CenterOnPrimary,
@@ -45,9 +45,9 @@ ReactorApp.Run(_ =>
         };
     }
 
-    var tray = KumoApp.OpenTrayIcon(new KumoTrayIconSpec(
+    var tray = HNotifyApp.OpenTrayIcon(new HNotifyTrayIconSpec(
         WindowIcon.FromPath(Path.Combine(AppContext.BaseDirectory, "app.ico")),
-        "Kumo Tray Icon",
+        "HNotify Tray Icon",
         WindowKey.Of("main-tray")));
 
     tray.Click += (_, _) => OpenMainWindow();
@@ -70,7 +70,7 @@ sealed class MainWindowContent : Component
 {
     public override Element Render() => Border(
         VStack(12,
-            TextBlock("Kumo Tray Icon (H.NotifyIcon)").FontSize(28).Bold(),
+            TextBlock("HNotify Tray Icon (H.NotifyIcon)").FontSize(28).Bold(),
             TextBlock("左键打开主窗口，右键显示 Reactor flyout。"))
         .Padding(24));
 }

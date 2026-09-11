@@ -12,7 +12,7 @@ namespace Kumo.H.NotifyIcon.Reactor;
 /// <summary>
 /// Top-level system-tray icon — the H.NotifyIcon-backed peer of Reactor
 /// v0.1.0-preview.15's <c>Microsoft.UI.Reactor.ReactorTrayIcon</c>.
-/// Created via <see cref="KumoApp.OpenTrayIcon"/>; provides the icon bitmap,
+/// Created via <see cref="HNotifyApp.OpenTrayIcon"/>; provides the icon bitmap,
 /// tooltip, and click events, and reconciles a Reactor <see cref="Element"/>
 /// as its flyout via <see cref="ShowFlyout"/>.
 /// </summary>
@@ -28,30 +28,30 @@ namespace Kumo.H.NotifyIcon.Reactor;
 /// created by H.NotifyIcon's <c>TaskbarIcon</c>, which owns its own hidden
 /// message window and re-registers itself after an Explorer restart, so no
 /// hidden-window bookkeeping is needed here. The flyout is rendered by
-/// <see cref="KumoFlyoutHostWindow"/>, a single borderless topmost window
+/// <see cref="HNotifyFlyoutHostWindow"/>, a single borderless topmost window
 /// reused per process (only one tray flyout can be open at a time, same as
 /// preview15).
 /// </para>
 /// </remarks>
-public sealed class KumoTrayIcon : IDisposable
+public sealed class HNotifyTrayIcon : IDisposable
 {
     private static int s_nextId;
 
     private readonly string _id;
-    private KumoTrayIconSpec _spec;
+    private HNotifyTrayIconSpec _spec;
     private HTaskbarIcon? _taskbarIcon;
     private global::System.IDisposable? _mouseSubscription;
     private bool _registered;
     private bool _disposed;
 
-    /// <summary>Stable id, e.g. <c>"kumo-tray-1"</c>. Allocated monotonically per process.</summary>
+    /// <summary>Stable id, e.g. <c>"hnotify-tray-1"</c>. Allocated monotonically per process.</summary>
     public string Id => _id;
 
-    /// <summary>Optional stable identity (from <see cref="KumoTrayIconSpec.Key"/>).</summary>
+    /// <summary>Optional stable identity (from <see cref="HNotifyTrayIconSpec.Key"/>).</summary>
     public WindowKey? Key => _spec.Key;
 
-    /// <summary>Last-applied <see cref="KumoTrayIconSpec"/> snapshot.</summary>
-    public KumoTrayIconSpec Spec => _spec;
+    /// <summary>Last-applied <see cref="HNotifyTrayIconSpec"/> snapshot.</summary>
+    public HNotifyTrayIconSpec Spec => _spec;
 
     /// <summary>
     /// The icon bitmap source. Mutating triggers a shell re-apply.
@@ -64,7 +64,7 @@ public sealed class KumoTrayIcon : IDisposable
         set
         {
             ArgumentNullException.ThrowIfNull(value);
-            KumoThreading.ThrowIfNotOnUiThread(nameof(Icon));
+            HNotifyThreading.ThrowIfNotOnUiThread(nameof(Icon));
             if (_disposed || (ReferenceEquals(_spec.Icon, value) && _spec.DrawingIcon is null)) return;
 
             _spec = _spec with { Icon = value, DrawingIcon = null };
@@ -73,7 +73,7 @@ public sealed class KumoTrayIcon : IDisposable
     }
 
     /// <summary>
-    /// The in-memory icon bitmap source (Kumo extension over preview15).
+    /// The in-memory icon bitmap source (HNotify extension over preview15).
     /// Mutating triggers a shell re-apply.
     /// </summary>
     public System.Drawing.Icon? DrawingIcon
@@ -82,7 +82,7 @@ public sealed class KumoTrayIcon : IDisposable
         set
         {
             ArgumentNullException.ThrowIfNull(value);
-            KumoThreading.ThrowIfNotOnUiThread(nameof(DrawingIcon));
+            HNotifyThreading.ThrowIfNotOnUiThread(nameof(DrawingIcon));
             if (_disposed || ReferenceEquals(_spec.DrawingIcon, value)) return;
 
             _spec = _spec with { DrawingIcon = value, Icon = null };
@@ -97,7 +97,7 @@ public sealed class KumoTrayIcon : IDisposable
         set
         {
             ArgumentNullException.ThrowIfNull(value);
-            KumoThreading.ThrowIfNotOnUiThread(nameof(Tooltip));
+            HNotifyThreading.ThrowIfNotOnUiThread(nameof(Tooltip));
             if (_disposed || string.Equals(_spec.Tooltip, value, StringComparison.Ordinal)) return;
 
             _spec = _spec with { Tooltip = value };
@@ -111,7 +111,7 @@ public sealed class KumoTrayIcon : IDisposable
         get => _spec.IsVisible;
         set
         {
-            KumoThreading.ThrowIfNotOnUiThread(nameof(IsVisible));
+            HNotifyThreading.ThrowIfNotOnUiThread(nameof(IsVisible));
             if (_disposed || _spec.IsVisible == value) return;
 
             _spec = _spec with { IsVisible = value };
@@ -128,21 +128,21 @@ public sealed class KumoTrayIcon : IDisposable
     /// <summary>Fires on the UI thread when the user right-clicks the icon.</summary>
     public event EventHandler? RightClick;
 
-    internal KumoTrayIcon(KumoTrayIconSpec spec)
+    internal HNotifyTrayIcon(HNotifyTrayIconSpec spec)
     {
         ArgumentNullException.ThrowIfNull(spec);
         _spec = spec;
-        _id = $"kumo-tray-{Interlocked.Increment(ref s_nextId)}";
+        _id = $"hnotify-tray-{Interlocked.Increment(ref s_nextId)}";
     }
 
     /// <summary>
     /// Registers the icon with the shell. UI-thread only. Called once by
-    /// <see cref="KumoApp.OpenTrayIcon"/>; subsequent state changes flow through
+    /// <see cref="HNotifyApp.OpenTrayIcon"/>; subsequent state changes flow through
     /// <see cref="Update"/> or the property setters.
     /// </summary>
     internal void RegisterWithShell()
     {
-        KumoThreading.ThrowIfNotOnUiThread(nameof(RegisterWithShell));
+        HNotifyThreading.ThrowIfNotOnUiThread(nameof(RegisterWithShell));
         if (_registered) return;
 
         var taskbarIcon = new HTaskbarIcon();
@@ -153,7 +153,7 @@ public sealed class KumoTrayIcon : IDisposable
         // key maps to a stable per-icon id instead.
         if (_spec.Key is { } key)
         {
-            taskbarIcon.CustomName = $"Kumo.H.NotifyIcon.Reactor.{key}";
+            taskbarIcon.CustomName = $"HNotify.TrayIcon.{key}";
         }
 
         // The library owns Click/DoubleClick/RightClick and ShowFlyout, so the
@@ -163,7 +163,7 @@ public sealed class KumoTrayIcon : IDisposable
 
         taskbarIcon.ToolTipText = _spec.Tooltip ?? string.Empty;
 
-        var icon = KumoIconResolver.Resolve(_spec);
+        var icon = HNotifyIconResolver.Resolve(_spec);
         if (icon is not null) taskbarIcon.Icon = icon;
 
         // H.NotifyIcon disables its WinUI routed events by default
@@ -214,28 +214,28 @@ public sealed class KumoTrayIcon : IDisposable
     public void ShowFlyout(Element flyoutContent)
     {
         ArgumentNullException.ThrowIfNull(flyoutContent);
-        KumoThreading.ThrowIfNotOnUiThread(nameof(ShowFlyout));
+        HNotifyThreading.ThrowIfNotOnUiThread(nameof(ShowFlyout));
         if (_disposed) return;
 
-        KumoFlyoutHostWindow.GetOrCreate().Show(flyoutContent);
+        HNotifyFlyoutHostWindow.GetOrCreate().Show(flyoutContent);
     }
 
     /// <summary>Dismiss the tray flyout. UI-thread only. Idempotent.</summary>
     public void HideFlyout()
     {
-        KumoThreading.ThrowIfNotOnUiThread(nameof(HideFlyout));
-        KumoFlyoutHostWindow.HideIfShown();
+        HNotifyThreading.ThrowIfNotOnUiThread(nameof(HideFlyout));
+        HNotifyFlyoutHostWindow.HideIfShown();
     }
 
     /// <summary>
     /// Diff <paramref name="next"/> against the current spec and re-apply only
     /// changed fields. UI-thread only.
     /// </summary>
-    public void Update(KumoTrayIconSpec next)
+    public void Update(HNotifyTrayIconSpec next)
     {
         ArgumentNullException.ThrowIfNull(next);
-        KumoThreading.ThrowIfNotOnUiThread(nameof(Update));
-        if (_disposed) throw new ObjectDisposedException(nameof(KumoTrayIcon));
+        HNotifyThreading.ThrowIfNotOnUiThread(nameof(Update));
+        if (_disposed) throw new ObjectDisposedException(nameof(HNotifyTrayIcon));
 
         var prev = _spec;
         _spec = next;
@@ -267,7 +267,7 @@ public sealed class KumoTrayIcon : IDisposable
     public void Dispose()
     {
         if (_disposed) return;
-        KumoThreading.ThrowIfNotOnUiThread(nameof(Dispose));
+        HNotifyThreading.ThrowIfNotOnUiThread(nameof(Dispose));
         _disposed = true;
 
         var taskbarIcon = _taskbarIcon;
@@ -284,12 +284,12 @@ public sealed class KumoTrayIcon : IDisposable
             }
             catch (Exception ex)
             {
-                Debug.WriteLine($"[Kumo] Tray icon dispose failed: {ex.Message}");
+                Debug.WriteLine($"[HNotify] Tray icon dispose failed: {ex.Message}");
             }
         }
 
         _registered = false;
-        KumoApp.UnregisterTrayIcon(this);
+        HNotifyApp.UnregisterTrayIcon(this);
     }
 
     private void ApplyIcon()
@@ -297,8 +297,8 @@ public sealed class KumoTrayIcon : IDisposable
         if (_taskbarIcon is null) return;
         // Assigning Icon disposes the previous instance (H.NotifyIcon owns what
         // it holds), so the resolved clone must always be a fresh instance —
-        // which KumoIconResolver guarantees.
-        _taskbarIcon.Icon = KumoIconResolver.Resolve(_spec);
+        // which HNotifyIconResolver guarantees.
+        _taskbarIcon.Icon = HNotifyIconResolver.Resolve(_spec);
     }
 
     private void ApplyVisibility()

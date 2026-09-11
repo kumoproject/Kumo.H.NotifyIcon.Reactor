@@ -5,10 +5,10 @@ namespace Kumo.H.NotifyIcon.Reactor;
 /// <summary>
 /// UI-thread validation for the tray surface, mirroring Reactor's internal
 /// <c>ThreadAffinity.ThrowIfNotOnUIThread</c> contract: every mutator on
-/// <see cref="KumoTrayIcon"/> must run on the UI thread captured by
+/// <see cref="HNotifyTrayIcon"/> must run on the UI thread captured by
 /// <see cref="ReactorApp.UIDispatcher"/>.
 /// </summary>
-internal static class KumoThreading
+internal static class HNotifyThreading
 {
     /// <summary>
     /// Throws <see cref="InvalidOperationException"/> when the current thread is
