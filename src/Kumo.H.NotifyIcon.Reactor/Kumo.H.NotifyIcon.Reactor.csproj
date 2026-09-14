@@ -29,7 +29,9 @@
 
   <ItemGroup>
     <PackageReference Include="Microsoft.UI.Reactor" Version="0.1.0-preview.14" />
-    <PackageReference Include="H.NotifyIcon.WinUI" Version="2.5.0-dev.2" />
+    <!-- beta.3 disposes the previous SecondWindow context-menu host before
+         replacing ContextFlyout; older preview builds retained those hosts. -->
+    <PackageReference Include="H.NotifyIcon.WinUI" Version="2.5.0-beta.3" />
   </ItemGroup>
 
 </Project>
