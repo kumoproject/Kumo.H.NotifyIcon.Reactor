@@ -42,6 +42,7 @@ public sealed partial class HNotifyTrayIcon : IDisposable
     private readonly string _id;
     private HNotifyTrayIconSpec _spec;
     private HTaskbarIcon? _taskbarIcon;
+    private MenuFlyout? _appliedContextMenu;
     private global::System.IDisposable? _mouseSubscription;
     private bool _registered;
     private bool _disposed;
@@ -371,6 +372,7 @@ public sealed partial class HNotifyTrayIcon : IDisposable
 
         var taskbarIcon = _taskbarIcon;
         _taskbarIcon = null;
+        _appliedContextMenu = null;
 
         try { _mouseSubscription?.Dispose(); } catch { /* best effort */ }
         _mouseSubscription = null;
@@ -412,12 +414,26 @@ public sealed partial class HNotifyTrayIcon : IDisposable
 
         var menu = _spec.ContextMenu;
 
+        // H.NotifyIcon's SecondWindow mode owns a separate XAML window for
+        // ContextFlyout. Explicitly tear that host down before replacing the
+        // source flyout; assigning a new flyout directly from inside a
+        // localized menu update can otherwise leave the old host attached to
+        // the XAML application and crash during Application.Exit().
+        bool replacingMenu = !ReferenceEquals(_appliedContextMenu, menu);
+        if (replacingMenu && _taskbarIcon.ContextMenuMode == HContextMenuMode.SecondWindow)
+        {
+            _taskbarIcon.CloseContextMenu();
+            _taskbarIcon.ContextMenuMode = HContextMenuMode.PopupMenu;
+            _taskbarIcon.ContextFlyout = null;
+        }
+
         // No menu attached → keep the backend from opening anything on its own,
         // exactly like before this extension existed.
         _taskbarIcon.MenuActivation = menu is null
             ? HPopupActivationMode.None
             : MapActivation(_spec.MenuActivation);
         _taskbarIcon.ContextFlyout = menu;
+        _appliedContextMenu = menu;
         _taskbarIcon.ContextMenuMode = MapMode(_spec.ContextMenuMode);
         _taskbarIcon.ContextMenuThemeMode = MapTheme(_spec.ContextMenuTheme);
         _taskbarIcon.CloseContextMenuOnItemClick = _spec.CloseContextMenuOnItemClick;
