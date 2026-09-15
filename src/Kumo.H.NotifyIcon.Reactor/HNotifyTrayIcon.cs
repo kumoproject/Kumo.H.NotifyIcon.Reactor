@@ -3,6 +3,7 @@ using Microsoft.UI.Reactor;
 using Microsoft.UI.Reactor.Core;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using HMenuFlyoutItemBase = Microsoft.UI.Xaml.Controls.MenuFlyoutItemBase;
 using HTaskbarIcon = global::H.NotifyIcon.TaskbarIcon;
 using HMouseEvent = global::H.NotifyIcon.Core.MouseEvent;
 using HMouseEventReceivedEventArgs = global::H.NotifyIcon.Core.MessageWindow.MouseEventReceivedEventArgs;
@@ -226,6 +227,12 @@ public sealed partial class HNotifyTrayIcon : IDisposable
         HNotifyThreading.ThrowIfNotOnUiThread(nameof(RegisterWithShell));
         if (_registered) return;
 
+        CreateTaskbarIcon();
+        _registered = true;
+    }
+
+    private void CreateTaskbarIcon()
+    {
         var taskbarIcon = new HTaskbarIcon();
         _taskbarIcon = taskbarIcon;
 
@@ -268,8 +275,6 @@ public sealed partial class HNotifyTrayIcon : IDisposable
         // Apply the initial visibility only after creation: the backend only
         // carries NIS_HIDDEN into NIM_MODIFY, not into the initial NIM_ADD.
         ApplyVisibility();
-
-        _registered = true;
     }
 
     private void OnMouseEventReceived(object? sender, HMouseEventReceivedEventArgs args)
@@ -415,16 +420,30 @@ public sealed partial class HNotifyTrayIcon : IDisposable
         var menu = _spec.ContextMenu;
 
         // H.NotifyIcon's SecondWindow mode owns a separate XAML window for
-        // ContextFlyout. Explicitly tear that host down before replacing the
-        // source flyout; assigning a new flyout directly from inside a
-        // localized menu update can otherwise leave the old host attached to
-        // the XAML application and crash during Application.Exit().
+        // ContextFlyout. Its property callbacks are synchronous, but the
+        // second-window host also moves menu items between the source flyout
+        // and an internal flyout. Replacing those objects in place can leave
+        // the backend's host in a partially detached state.
         bool replacingMenu = !ReferenceEquals(_appliedContextMenu, menu);
         if (replacingMenu && _taskbarIcon.ContextMenuMode == HContextMenuMode.SecondWindow)
         {
-            _taskbarIcon.CloseContextMenu();
-            _taskbarIcon.ContextMenuMode = HContextMenuMode.PopupMenu;
-            _taskbarIcon.ContextFlyout = null;
+            // A localized menu is normally a new MenuFlyout with the same
+            // structure. Keep the source flyout (and therefore H.NotifyIcon's
+            // second-window peer) alive and copy the changed item state into
+            // it. Recreating the TaskbarIcon is only needed when the menu
+            // topology itself changes.
+            if (menu is not null && _appliedContextMenu is not null &&
+                _spec.ContextMenuMode == HNotifyContextMenuMode.SecondWindow &&
+                TrySynchronizeMenuInPlace(_appliedContextMenu, menu))
+            {
+                _taskbarIcon.MenuActivation = MapActivation(_spec.MenuActivation);
+                _taskbarIcon.ContextMenuThemeMode = MapTheme(_spec.ContextMenuTheme);
+                _taskbarIcon.CloseContextMenuOnItemClick = _spec.CloseContextMenuOnItemClick;
+                return;
+            }
+
+            RecreateTaskbarIcon();
+            return;
         }
 
         // No menu attached → keep the backend from opening anything on its own,
@@ -437,6 +456,127 @@ public sealed partial class HNotifyTrayIcon : IDisposable
         _taskbarIcon.ContextMenuMode = MapMode(_spec.ContextMenuMode);
         _taskbarIcon.ContextMenuThemeMode = MapTheme(_spec.ContextMenuTheme);
         _taskbarIcon.CloseContextMenuOnItemClick = _spec.CloseContextMenuOnItemClick;
+    }
+
+    private static bool TrySynchronizeMenuInPlace(MenuFlyout target, MenuFlyout source)
+    {
+        if (target.Items.Count != source.Items.Count)
+            return false;
+
+        for (var index = 0; index < target.Items.Count; index++)
+        {
+            if (!HasSameMenuItemShape(target.Items[index], source.Items[index]))
+                return false;
+        }
+
+        for (var index = 0; index < target.Items.Count; index++)
+            SynchronizeMenuItem(target.Items[index], source.Items[index]);
+
+        target.AreOpenCloseAnimationsEnabled = source.AreOpenCloseAnimationsEnabled;
+        target.MenuFlyoutPresenterStyle = source.MenuFlyoutPresenterStyle;
+        return true;
+    }
+
+    private static bool HasSameMenuItemShape(
+        HMenuFlyoutItemBase target,
+        HMenuFlyoutItemBase source)
+    {
+        switch (target, source)
+        {
+            case (MenuFlyoutSeparator, MenuFlyoutSeparator):
+            case (ToggleMenuFlyoutItem, ToggleMenuFlyoutItem):
+            case (RadioMenuFlyoutItem, RadioMenuFlyoutItem):
+                return true;
+
+            case (MenuFlyoutSubItem targetSub, MenuFlyoutSubItem sourceSub):
+                if (targetSub.Items.Count != sourceSub.Items.Count)
+                    return false;
+
+                for (var index = 0; index < targetSub.Items.Count; index++)
+                {
+                    if (!HasSameMenuItemShape(targetSub.Items[index], sourceSub.Items[index]))
+                        return false;
+                }
+                return true;
+
+            case (MenuFlyoutItem, MenuFlyoutItem):
+                return true;
+
+            default:
+                return false;
+        }
+    }
+
+    private static void SynchronizeMenuItem(
+        HMenuFlyoutItemBase target,
+        HMenuFlyoutItemBase source)
+    {
+        switch (target, source)
+        {
+            case (ToggleMenuFlyoutItem targetToggle, ToggleMenuFlyoutItem sourceToggle):
+                targetToggle.Text = sourceToggle.Text;
+                targetToggle.IsEnabled = sourceToggle.IsEnabled;
+                targetToggle.Icon = sourceToggle.Icon;
+                targetToggle.IsChecked = sourceToggle.IsChecked;
+                break;
+
+            case (RadioMenuFlyoutItem targetRadio, RadioMenuFlyoutItem sourceRadio):
+                targetRadio.Text = sourceRadio.Text;
+                targetRadio.IsEnabled = sourceRadio.IsEnabled;
+                targetRadio.Icon = sourceRadio.Icon;
+                targetRadio.GroupName = sourceRadio.GroupName;
+                targetRadio.IsChecked = sourceRadio.IsChecked;
+                break;
+
+            case (MenuFlyoutSubItem targetSub, MenuFlyoutSubItem sourceSub):
+                targetSub.Text = sourceSub.Text;
+                targetSub.IsEnabled = sourceSub.IsEnabled;
+                targetSub.Icon = sourceSub.Icon;
+                for (var index = 0; index < targetSub.Items.Count; index++)
+                    SynchronizeMenuItem(targetSub.Items[index], sourceSub.Items[index]);
+                break;
+
+            case (MenuFlyoutItem targetItem, MenuFlyoutItem sourceItem):
+                targetItem.Text = sourceItem.Text;
+                targetItem.IsEnabled = sourceItem.IsEnabled;
+                targetItem.Icon = sourceItem.Icon;
+                targetItem.Command = sourceItem.Command;
+                targetItem.CommandParameter = sourceItem.CommandParameter;
+                break;
+        }
+    }
+
+    private void RecreateTaskbarIcon()
+    {
+        var previous = _taskbarIcon;
+        if (previous is null)
+            return;
+
+        _taskbarIcon = null;
+        _appliedContextMenu = null;
+        try { _mouseSubscription?.Dispose(); } catch { /* best effort */ }
+        _mouseSubscription = null;
+
+        try
+        {
+            previous.Dispose();
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"[HNotify] Previous tray icon disposal failed during menu replacement: {ex.Message}");
+        }
+
+        try
+        {
+            CreateTaskbarIcon();
+        }
+        catch
+        {
+            var failed = _taskbarIcon;
+            _taskbarIcon = null;
+            try { failed?.Dispose(); } catch { /* best effort */ }
+            throw;
+        }
     }
 
     // The public enums mirror the backend's values one-to-one; the mappings stay
