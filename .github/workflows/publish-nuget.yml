@@ -1,0 +1,90 @@
+name: Publish NuGet
+
+on:
+  push:
+    branches:
+      - master
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: publish-nuget-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: windows-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up .NET 10
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Set package version
+        id: version
+        shell: pwsh
+        run: |
+          [xml]$project = Get-Content "src/Kumo.H.NotifyIcon.Reactor/Kumo.H.NotifyIcon.Reactor.csproj" -Raw
+          $projectVersion = [string]($project.Project.PropertyGroup | ForEach-Object { $_.Version } | Where-Object { $_ } | Select-Object -First 1)
+          if ([string]::IsNullOrWhiteSpace($projectVersion)) {
+            throw "Could not read Version from the package project."
+          }
+
+          if ($env:GITHUB_REF_TYPE -eq "tag") {
+            $tag = $env:GITHUB_REF_NAME
+            if (-not $tag.StartsWith("v")) {
+              throw "Release tags must start with 'v', for example v1.2.3."
+            }
+            $version = $tag.Substring(1)
+            if ($version -notmatch '^\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$') {
+              throw "Tag '$tag' is not a valid package version. Use v1.2.3 or v1.2.3-preview.1."
+            }
+          } else {
+            $baseVersion = $projectVersion -replace '-.*$', ''
+            $version = "$baseVersion-preview.$env:GITHUB_RUN_NUMBER"
+          }
+
+          "package_version=$version" >> $env:GITHUB_OUTPUT
+          Write-Host "Publishing package version $version"
+
+      - name: Pack
+        shell: pwsh
+        env:
+          PACKAGE_VERSION: ${{ steps.version.outputs.package_version }}
+        run: >-
+          dotnet pack src/Kumo.H.NotifyIcon.Reactor/Kumo.H.NotifyIcon.Reactor.csproj
+          --configuration Release
+          --output artifacts
+          "-p:PackageVersion=$env:PACKAGE_VERSION"
+
+      - name: Publish to NuGet.org
+        shell: pwsh
+        env:
+          NUGET_API_KEY: ${{ secrets.NUGET_API_KEY }}
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:NUGET_API_KEY)) {
+            throw "Add a NUGET_API_KEY repository secret before publishing."
+          }
+
+          $packages = Get-ChildItem artifacts -Filter *.nupkg -File
+          if (-not $packages) {
+            throw "No NuGet packages were produced."
+          }
+
+          foreach ($package in $packages) {
+            dotnet nuget push $package.FullName `
+              --api-key $env:NUGET_API_KEY `
+              --source https://api.nuget.org/v3/index.json `
+              --skip-duplicate
+            if ($LASTEXITCODE -ne 0) {
+              throw "Failed to publish $($package.Name)."
+            }
+          }
